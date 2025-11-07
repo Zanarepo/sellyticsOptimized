@@ -4,7 +4,7 @@
  */
 
 import { supabase } from '../supabaseClient';
-import { toast } from 'react-toastify';
+//import { toast } from 'react-toastify';
 
 /**
  * Check if a device ID has already been sold
