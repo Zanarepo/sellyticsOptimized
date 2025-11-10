@@ -123,17 +123,18 @@ export default function NotificationSettings() {
       </Switch>
     </Switch.Group>
   );
-
+ 
   return (
     <div className="p-6 grid gap-4">
-      <div className="flex flex-col space-y-4 p-4 border rounded-lg shadow-md">
-        <h2 className="text-xl font-bold">Alert Notification Settings</h2>
-
+      <div className="flex flex-col space-y-4 p-4 border rounded-lg shadow-md ">
+        <h2 className="text-xl font-bold dark:text-white">Alert Notification Settings</h2>
+        <div className="p-4 border space-y-4 rounded-lg dark:text-white">
         {renderSwitch("Email Enabled", "email_enabled")}
         {renderSwitch("Low Inventory Alerts", "enable_low_stock")}
         {renderSwitch("Sales Summary", "enable_sales_summary")}
         {renderSwitch("Product Insert/Update/Delete", "enable_product_events")}
-{/* 
+        </div>
+{/* </div>
         <div className="flex items-center justify-between">
           <span>Reporting Period</span>
           <select
@@ -192,7 +193,7 @@ export default function NotificationSettings() {
         </div>
 */}
         <div className="flex flex-col">
-          <label className="text-sm mb-1">Reorder Level Threshold</label>
+          <label className="text-sm mb-1 dark:text-white">Reorder Level Threshold</label>
           <input
             type="number"
             value={settings.reorder_level_threshold}

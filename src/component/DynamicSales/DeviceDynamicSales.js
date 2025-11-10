@@ -698,7 +698,7 @@ const fetchSales = useCallback(async () => {
       ...sale,
       deviceIds: sale.device_id ? sale.device_id.split(',').filter(id => id.trim()) : [],
       deviceSizes: sale.device_size ? sale.device_size.split(',').filter(size => size.trim()) : [],
-      customer_name: sale.customer?.fullname || 'Unknown', // Add customer_name
+      customer_name: sale.customer?.fullname || 'N/A', // Add customer_name
     }));
     setSales(processedSales);
     setFiltered(processedSales);

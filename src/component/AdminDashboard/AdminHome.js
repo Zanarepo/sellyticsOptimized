@@ -17,6 +17,7 @@ import Owners from './Owners';
 import DashboardAccess from '../Ops/DashboardAccess';
 import PriceUpdateCompo from '../Payments/PriceUpdateCompo';
 import AccesDashboard from './AccesDashboard';
+import AdminOnboardStores from '../UserDashboard/AdminOnboardStores';
 
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState('Stores');
@@ -56,6 +57,8 @@ const Dashboard = () => {
         return <Wrapper><AccesDashboard /></Wrapper>;
       case 'Access':
         return <Wrapper><DashboardAccess /></Wrapper>;
+      case 'Onboard Stores':
+        return <Wrapper><AdminOnboardStores /></Wrapper>;
       default:
         return <Wrapper>Welcome to the Dashboard</Wrapper>;
     }
@@ -68,7 +71,9 @@ const Dashboard = () => {
     { name: 'Stores', icon: FaStore, aria: 'Stores: View and manage stores' },
     { name: 'Pricing', icon: FaMoneyBillWave, aria: 'Pricing: Update pricing plans' },
     { name: 'Store Access', icon: FaKey, aria: 'Store Access: Manage store access permissions' },
+    {name: 'Onboard Stores', icon: FaStore, aria: 'Onboard Stores: Onboard Customers Products'},
     { name: 'Access', icon: FaLockOpen, aria: 'Access: Manage dashboard access' },
+
   ];
 
   return (

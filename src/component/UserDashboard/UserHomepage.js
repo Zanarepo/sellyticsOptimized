@@ -5,13 +5,14 @@ import {
   FaBars,
   FaTimes,
   FaQrcode,
-  FaBarcode,
+  //FaBarcode,
   FaIdBadge,
   FaBell,
+  FaUsersCog,
   FaCrown,
   FaHome,
   FaRobot,
-  FaUsersCog,
+  FaWrench ,
   FaUserShield,
   FaMoneyBillWave,
 } from 'react-icons/fa';
@@ -27,6 +28,7 @@ import AIpowerInsights from './AIpowerInsights';
 import AdminOps from './AdminOps';
 import Financials from '../UserDashboard/Financials';
 import StoreAdmins from './StoreAdmins';
+import NotificationAlertReports from './NotificationAlertReports'
 
 
 const Dashboard = () => {
@@ -125,12 +127,22 @@ useEffect(() => {
             <PricingFeatures />
           </div>
         );
-      case 'Profile':
-        return (
-          <div className="w-full bg-white dark:bg-gray-900 p-4">
-            <Profile />
-          </div>
-        );
+        case 'Profile':
+          return (
+            <div className="w-full bg-white dark:bg-gray-900 p-4">
+              <Profile />
+            </div>
+          );
+
+          case 'Alert Settings':
+            return (
+              <div className="w-full bg-white dark:bg-gray-900 p-4">
+                <NotificationAlertReports />
+              </div>
+            );
+
+
+        
       default:
         return (
           <div className="w-full bg-white dark:bg-gray-900 p-4">
@@ -153,7 +165,7 @@ useEffect(() => {
   // Navigation items
   const navItems = [
     { name: 'Home', icon: FaHome, aria: 'Home: Go to the landing page' },
-    { name: 'Flex Scan', icon: FaBarcode, aria: 'Flex Scan: Access your store management tools' },
+    //{ name: 'Flex Scan', icon: FaBarcode, aria: 'Flex Scan: Access your store management tools' },
     { name: 'Fix Scan', icon: FaQrcode, aria: 'Fix Scan: View and edit your profile' },
     { name: 'AI Insights', icon: FaRobot, aria: 'AI Insights: Explore AI-driven insights for your store' },
     { name: 'Financials', icon: FaMoneyBillWave, aria: 'Financials: View and edit your financial data' },
@@ -163,6 +175,8 @@ useEffect(() => {
     { name: 'Upgrade', icon: FaCrown, aria: 'Upgrade: Upgrade your plan for more features' },
     { name: 'Store Admins', icon: FaUsersCog, aria: 'Manage your staff and assign roles' },
     { name: 'Profile', icon: FaUser, aria: 'Profile: View and edit your profile' },
+    { name: 'Alert Settings', icon: FaWrench , aria: 'Alert Settings: Manage what type of alert that you want to receive ' },
+    
   ];
 
   // Toggle sidebar

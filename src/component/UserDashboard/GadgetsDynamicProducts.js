@@ -1,9 +1,12 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
-import { FaEdit, FaTrashAlt, FaPlus, FaCamera } from 'react-icons/fa';
+import { FaEdit, FaTrashAlt, FaPlus, FaCamera, FaFileCsv, FaDownload } from 'react-icons/fa';
+import { uploadProductsFromCSV } from '../UserDashboard/ProductBatchUpload';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { Html5Qrcode, Html5QrcodeSupportedFormats, Html5QrcodeScannerState } from 'html5-qrcode';
+import InstructionsModal from '../UserDashboard/InstructionsModal';
+import InfoIcon from '../UserDashboard/InfoIcon';
 
 // Success sound for scan feedback
 const playSuccessSound = () => {
@@ -11,9 +14,11 @@ const playSuccessSound = () => {
   audio.play().catch((err) => console.error('Audio play error:', err));
 };
 
-function DynamicProducts() {
-  const storeId = localStorage.getItem('store_id');
+function DynamicProducts({ overrideStoreId }) {
+    // Prioritize overrideStoreId if provided (for admin use), else fall back to localStorage
+    const storeId = overrideStoreId || localStorage.getItem('store_id');
 
+    
   // STATES
   const [products, setProducts] = useState([]);
   const [filtered, setFiltered] = useState([]);
@@ -51,7 +56,96 @@ function DynamicProducts() {
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
   const [detailPage, setDetailPage] = useState(1);
   const detailPageSize = 20;
+  const [uploadProgress, setUploadProgress] = useState(0);
+const [isUploading, setIsUploading] = useState(false);
+const fileInputRef = useRef(null);
+const dropZoneRef = useRef(null);
+const [, setUploadMessage] = useState(null);
+const [showInstructions, setShowInstructions] = useState(false);
 
+  const downloadCSVTemplate = () => {
+
+    
+    const header =
+      'name,description,purchase_price,selling_price,suppliers_name,device_ids,device_sizes,purchase_qty';
+    const example1 =
+      'iPhone 14,Black 128GB,450000,650000,Apple Store,IMEI123;IMEI124,128GB;128GB,';
+    const example2 =
+      'Samsung Watch,Smartwatch,80000,120000,TechHub,WATCH001;WATCH002,Black;Silver,';
+    const example3 =
+      'Rice 50kg,Parboiled Rice,25000,35000,FoodMart,,,100';
+    const example4 =
+      'Cement,Bag of Cement,5000,7000,BuildCo,,,200';
+  
+    const csvContent = `${header}\n${example1}\n${example2}\n${example3}\n${example4}`;
+  
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'product_import_template.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('CSV template downloaded');
+    
+  };
+
+  const handleCSVUpload = async (file) => {
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+    setUploadMessage(null);
+  
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const csvText = e.target && typeof e.target.result === 'string'
+        ? e.target.result
+        : '';
+
+      await uploadProductsFromCSV(
+        csvText,
+        storeId,
+        () => {
+          fetchProducts();
+        },
+        (progress) => setUploadProgress(Math.round(progress)),
+        (msg) => {
+          setUploadMessage(msg);
+          // Auto-close after message appears
+          setTimeout(() => {
+            setIsUploading(false);
+            setUploadProgress(0);
+            setUploadMessage(null);
+          }, 2000);
+        }
+      );
+    };
+    reader.readAsText(file);
+  };
+  
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const csvText = e.target && typeof e.target.result === 'string'
+        ? e.target.result
+        : '';
+  
+      await uploadProductsFromCSV(
+        csvText,
+        storeId,
+        () => {
+          fetchProducts();
+          setIsUploading(false);
+          setUploadProgress(0);
+        },
+        (progress) => {
+          setUploadProgress(Math.round(progress));
+        }
+      );
+    };
+    
   // Debouncing refs for scanner
   const lastScanTimeRef = useRef(0);
   const lastScannedCodeRef = useRef(null);
@@ -87,6 +181,7 @@ function DynamicProducts() {
       manualInputRef.current.focus();
     }
   }, [showScanner, scannerTarget]);
+
 
   // Process scanned barcode
   const processScannedBarcode = useCallback((scannedCode) => {
@@ -1021,7 +1116,7 @@ function DynamicProducts() {
   return (
     <div className="p-0 mt-4 dark:bg-gray-900 dark:text-white">
       <ToastContainer />
-      <div className="flex flex-col sm:flex-row gap-2 mb-4 px-2 sm:px-0">
+      <div className="flex flex-col gap-1">
         <input
           type="text"
           placeholder="Search by name, Product ID, or Size..."
@@ -1029,16 +1124,100 @@ function DynamicProducts() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button
-          onClick={() => setShowAdd(true)}
-          className="w-full sm:w-auto flex items-center justify-center sm:justify-start gap-2 px-4 py-2 bg-indigo-600 text-white rounded text-sm sm:text-base hover:bg-indigo-700 transition-all"
-        >
-          <FaPlus className="text-sm sm:text-base" />
-          <span className="hidden sm:inline">Add</span>
-        </button>
+       <div className="flex flex-col sm:flex-row gap-2 mb-4 px-2 sm:px-0">
+ 
+
+  
+   {/* ---- ADD PRODUCT ---- */}
+   <button
+    onClick={() => setShowAdd(true)}
+    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded text-sm sm:text-base hover:bg-indigo-700 transition-all"
+  >
+    <FaPlus className="text-sm sm:text-base" />
+    <span className="hidden sm:inline">Add</span>
+  </button>
+
+  <input
+  ref={fileInputRef}
+  type="file"
+  accept=".csv,text/csv"
+  onChange={(e) => handleCSVUpload(e.target.files?.[0] ?? null)}
+  className="hidden"
+/>
+{/* Drag & Drop Upload Zone */}
+{!isUploading && (
+  <div
+    ref={dropZoneRef}
+    onClick={() => fileInputRef.current?.click()}
+    onDragOver={(e) => {
+      e.preventDefault();
+      dropZoneRef.current?.classList.add('border-indigo-500', 'bg-indigo-50', 'dark:bg-indigo-900');
+    }}
+    onDragLeave={(e) => {
+      e.preventDefault();
+      dropZoneRef.current?.classList.remove('border-indigo-500', 'bg-indigo-50', 'dark:bg-indigo-900');
+    }}
+    onDrop={(e) => {
+      e.preventDefault();
+      dropZoneRef.current?.classList.remove('border-indigo-500', 'bg-indigo-50', 'dark:bg-indigo-900');
+      const file = e.dataTransfer.files[0];
+      if (file && file.name.endsWith('.csv')) {
+        handleCSVUpload(file);
+      } else {
+        toast.error('Please drop a valid CSV file');
+      }
+    }}
+    className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded text-sm sm:text-base hover:bg-green-700 cursor-pointer transition-all border-2 border-dashed border-green-400"
+  >
+    <FaFileCsv />
+    <span className="hidden sm:inline">Upload CSV</span>
+
+  </div>
+  
+)}
+  
+
+  {isUploading && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-full max-w-md">
+      <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-white">
+        Uploading Products...
+      </h3>
+      <div className="w-full bg-gray-200 rounded-full h-3 dark:bg-gray-700">
+        <div
+          className="bg-indigo-600 h-3 rounded-full transition-all duration-300"
+          style={{ width: `${uploadProgress}%` }}
+        />
       </div>
+      <p className="text-center mt-2 text-sm text-gray-600 dark:text-gray-400">
+        {uploadProgress}% Complete
+      </p>
+    </div>
+  </div>
+)}
+ 
+{/* ---- DOWNLOAD TEMPLATE ---- */}
+  <button
+    type="button"
+    onClick={downloadCSVTemplate}
+    className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-teal-600 text-white rounded text-sm sm:text-base hover:bg-teal-700 transition-all"
+  >
+    <FaDownload className="text-sm sm:text-base" />
+    <span className="hidden sm:inline">Template</span>
+  </button>
+
+  <InstructionsModal
+  isOpen={showInstructions}
+  onClose={() => setShowInstructions(false)}
+/>
+  <InfoIcon onClick={() => setShowInstructions(true)} />
+  
+</div>
 
 
+</div>
+        
+  
       
 {showAdd && (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center p-4 z-50 overflow-auto mt-16">
@@ -1124,7 +1303,7 @@ function DynamicProducts() {
                 className="w-full p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-indigo-500 text-sm"
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Use this for products without unique device IDs (e.g., bulk items, consumables). If using device IDs below, quantity will be calculated automatically.
+                Use this for products without unique  IDs (e.g., bulk items, consumables). If using IDs below, quantity will be calculated automatically.
               </p>
             </label>
             <label className="block">
@@ -1132,7 +1311,7 @@ function DynamicProducts() {
                 Product/Device IDs and Sizes (Optional - for trackable items)
               </span>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                Use this section for products with unique identifiers (IMEI, serial numbers, barcodes, etc.). Leave empty for non-device items.
+                Use this section for products with unique IDs (IMEI, serial numbers, barcodes, etc.). Leave empty for non-device items.
               </p>
               {p.deviceIds.map((id, i) => (
                 <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mt-2">

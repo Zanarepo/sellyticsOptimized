@@ -4,7 +4,7 @@ import {
   FaUser,
   FaBars,
   FaTimes,
-  FaBarcode,
+  //FaBarcode,
   FaQrcode,
   FaBell,
   FaIdBadge,
@@ -124,7 +124,7 @@ const Dashboard = () => {
   // Navigation items
   const navItems = [
     { name: 'Home', icon: FaHome, aria: 'Home: Go to the landing page', dataTour: 'home' },
-    { name: 'Flex Scan', icon: FaBarcode, aria: 'Flex Scan: Access your store management tools', dataTour: 'toolkits' },
+    //{ name: 'Flex Scan', icon: FaBarcode, aria: 'Flex Scan: Access your store management tools', dataTour: 'toolkits' },
     { name: 'Fix Scan', icon: FaQrcode, aria: 'Fix Scan: Fixed barcode scanning', dataTour: 'fix-scan' },
     { name: 'AI Insights', icon: FaRobot, aria: 'AI Insights: Access AI-powered insights', dataTour: 'ai-insights' },
     { name: 'Admin Ops', icon: FaUserShield, aria: 'Admin Operations: Manage store operations', dataTour: 'admin-ops' },

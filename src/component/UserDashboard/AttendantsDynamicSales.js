@@ -1,19 +1,22 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   FaPlus,
- 
+
   FaFileCsv,
   FaFilePdf,
-
-  FaCamera,
+ 
 } from 'react-icons/fa';
 import { supabase } from '../../supabaseClient';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import CustomerSelector from '../DynamicSales/CustomerSelector';
+
 
 import { motion } from 'framer-motion';
 import { Html5Qrcode, Html5QrcodeSupportedFormats, Html5QrcodeScannerState } from 'html5-qrcode';
+import ScannerModal from '../DynamicSales/userscomponents/ScannerModal'
+import SalesForm from '../DynamicSales/userscomponents/SalesForm';
+import SalesTable from '../DynamicSales/userscomponents/SalesTable';
+import { validateAndFetchDevice, hasDuplicateDeviceId } from '../../utils/deviceValidation';
 
 const tooltipVariants = {
   hidden: { opacity: 0, y: 10 },
@@ -57,7 +60,6 @@ const playSuccessSound = () => {
   });
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
-  const [totalOnboardingSteps] = useState(0);
   const [availableDeviceIds, setAvailableDeviceIds] = useState({}); // Object mapping lineIdx to { deviceIds: [], deviceSizes: [] }
 
   
@@ -81,6 +83,67 @@ const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const videoRef = useRef(null);
   const scannerDivRef = useRef(null);
   const html5QrCodeRef = useRef(null);
+  // Centralized updater to apply a scanned/entered device to either lines or saleForm
+  const updateFormWithDevice = useCallback((product, scannedId, deviceSize, modal, lineIdx, deviceIdx) => {
+    if (!product || !scannedId) return;
+
+    if (modal === 'add') {
+      setLines((ls) => {
+        const next = [...ls];
+        // Find existing line for same product by name
+        const existingLineIdx = next.findIndex(line => {
+          const prod = products.find(p => p.id === line.dynamic_product_id);
+          return prod && prod.name === product.name;
+        });
+
+        if (existingLineIdx !== -1) {
+          next[existingLineIdx].deviceIds.push(scannedId);
+          next[existingLineIdx].deviceSizes.push(deviceSize || '');
+          if (!next[existingLineIdx].isQuantityManual) {
+            next[existingLineIdx].quantity = next[existingLineIdx].deviceIds.filter(id => id.trim()).length || 1;
+          }
+          return next;
+        }
+
+        if (!next[lineIdx].dynamic_product_id || next[lineIdx].deviceIds.every(id => !id.trim())) {
+          next[lineIdx] = {
+            ...next[lineIdx],
+            dynamic_product_id: Number(product.id),
+            unit_price: Number(product.selling_price),
+            deviceIds: [scannedId],
+            deviceSizes: [deviceSize || ''],
+            quantity: next[lineIdx].isQuantityManual ? next[lineIdx].quantity : 1,
+          };
+          return next;
+        }
+
+        // Otherwise create new line
+        next.push({
+          dynamic_product_id: Number(product.id),
+          quantity: 1,
+          unit_price: Number(product.selling_price),
+          deviceIds: [scannedId],
+          deviceSizes: [deviceSize || ''],
+          isQuantityManual: false,
+        });
+        return next;
+      });
+    } else if (modal === 'edit') {
+      setSaleForm((f) => {
+        const updated = { ...f };
+        updated.dynamic_product_id = Number(product.id);
+        updated.unit_price = Number(product.selling_price);
+        updated.deviceIds = [...updated.deviceIds];
+        updated.deviceSizes = [...updated.deviceSizes];
+        updated.deviceIds[deviceIdx] = scannedId;
+        updated.deviceSizes[deviceIdx] = deviceSize || '';
+        if (!updated.isQuantityManual) {
+          updated.quantity = updated.deviceIds.filter(id => id.trim()).length || 1;
+        }
+        return updated;
+      });
+    }
+  }, [products]);
 
 
 
@@ -251,149 +314,34 @@ const checkSoldDevices = useCallback(async (deviceIds, productId, lineIdx) => {
         return;
       }
 
-      // Check if device ID is already sold
-      const { data: soldData, error: soldError } = await supabase
-        .from('dynamic_sales')
-        .select('device_id')
-        .eq('device_id', scannedDeviceId)
-        .eq('store_id', storeId)
-        .single();
-      if (soldError && soldError.code !== 'PGRST116') {
-        console.error('Error checking sold status:', soldError);
-        toast.error('Failed to validate Product ID');
-        setScannerError('Failed to validate Product ID');
-        return;
-      }
-      if (soldData) {
-        console.log('Device ID is sold:', scannedDeviceId);
-        toast.error(`Product ID "${scannedDeviceId}" has already been sold`);
-        setScannerError(`Product ID "${scannedDeviceId}" has already been sold`);
+      const result = await validateAndFetchDevice(scannedDeviceId, storeId);
+      if (!result.success) {
+        toast.error(result.error);
+        setScannerError(result.error);
         return;
       }
 
-      // Query product details
-      const { data: productData, error } = await supabase
-        .from('dynamic_product')
-        .select('id, name, selling_price, dynamic_product_imeis, device_size')
-        .eq('store_id', storeId)
-        .ilike('dynamic_product_imeis', `%${scannedDeviceId}%`)
-        .single();
-
-      if (error || !productData) {
-        console.error('Supabase Query Error:', error);
-        toast.error(`Product ID "${scannedDeviceId}" not found`);
-        setScannerError(`Product ID "${scannedDeviceId}" not found`);
+      if (!scannerTarget) {
+        toast.error('No scanner target set');
         return;
       }
 
-      console.log('Found Product:', productData);
-
-      const deviceIds = productData.dynamic_product_imeis ? productData.dynamic_product_imeis.split(',').map(id => id.trim()).filter(id => id) : [];
-      const deviceSizes = productData.device_size ? productData.device_size.split(',').map(size => size.trim()).filter(size => size) : [];
-      const idIndex = deviceIds.indexOf(scannedDeviceId);
-
+      const { product, deviceSize } = result;
       const { modal, lineIdx, deviceIdx } = scannerTarget;
-      let newDeviceIdx;
 
       if (modal === 'add') {
-        const ls = [...lines];
-        const existingLineIdx = ls.findIndex(line => {
-          const product = products.find(p => p.id === line.dynamic_product_id);
-          return product && product.name === productData.name;
-        });
-
-        if (existingLineIdx !== -1) {
-          if (ls[existingLineIdx].deviceIds.some(id => id.trim().toLowerCase() === scannedDeviceId.toLowerCase())) {
-            toast.error(`Product ID "${scannedDeviceId}" already exists in this product`);
-            setScannerError(`Product ID "${scannedDeviceId}" already exists`);
-            return;
-          }
-          ls[existingLineIdx].deviceIds.push(scannedDeviceId);
-          ls[existingLineIdx].deviceSizes.push(idIndex !== -1 ? deviceSizes[idIndex] || '' : '');
-          if (!ls[existingLineIdx].isQuantityManual) {
-            ls[existingLineIdx].quantity = ls[existingLineIdx].deviceIds.filter(id => id.trim()).length || 1;
-          }
-          const mergedLines = ls.filter((line, idx) => {
-            if (idx === existingLineIdx) return true;
-            const product = products.find(p => p.id === line.dynamic_product_id);
-            if (product && product.name === productData.name) {
-              ls[existingLineIdx].deviceIds.push(...line.deviceIds.filter(id => id.trim()));
-              ls[existingLineIdx].deviceSizes.push(...line.deviceSizes);
-              if (!ls[existingLineIdx].isQuantityManual) {
-                ls[existingLineIdx].quantity = ls[existingLineIdx].deviceIds.filter(id => id.trim()).length || 1;
-              }
-              return false;
-            }
-            return true;
-          });
-          console.log('Updated Lines (Existing Product):', mergedLines);
-          setLines(mergedLines);
-          newDeviceIdx = ls[existingLineIdx].deviceIds.length - 1;
-          checkSoldDevices(deviceIds, productData.id, existingLineIdx);
-          setScannerTarget({ modal, lineIdx: existingLineIdx, deviceIdx: newDeviceIdx });
-        } else {
-          if (!ls[lineIdx].dynamic_product_id || ls[lineIdx].deviceIds.every(id => !id.trim())) {
-            if (ls[lineIdx].deviceIds.some(id => id.trim().toLowerCase() === scannedDeviceId.toLowerCase())) {
-              toast.error(`Product ID "${scannedDeviceId}" already exists in this line`);
-              setScannerError(`Product ID "${scannedDeviceId}" already exists`);
-              return;
-            }
-            ls[lineIdx] = {
-              ...ls[lineIdx],
-              dynamic_product_id: Number(productData.id),
-              unit_price: Number(productData.selling_price),
-              deviceIds: [scannedDeviceId],
-              deviceSizes: [idIndex !== -1 ? deviceSizes[idIndex] || '' : ''],
-              quantity: ls[lineIdx].isQuantityManual ? ls[lineIdx].quantity : 1,
-            };
-            console.log('Updated Lines (Current Line):', ls);
-            setLines(ls);
-            newDeviceIdx = 0;
-            checkSoldDevices(deviceIds, productData.id, lineIdx);
-            setScannerTarget({ modal, lineIdx, deviceIdx: newDeviceIdx });
-          } else {
-            if (ls.some(line => line.deviceIds.some(id => id.trim().toLowerCase() === scannedDeviceId.toLowerCase()))) {
-              toast.error(`Product ID "${scannedDeviceId}" already exists in another product`);
-              setScannerError(`Product ID "${scannedDeviceId}" already exists`);
-              return;
-            }
-            const newLine = {
-              dynamic_product_id: Number(productData.id),
-              quantity: 1,
-              unit_price: Number(productData.selling_price),
-              deviceIds: [scannedDeviceId],
-              deviceSizes: [idIndex !== -1 ? deviceSizes[idIndex] || '' : ''],
-              isQuantityManual: false,
-            };
-            ls.push(newLine);
-            console.log('Added New Line:', ls);
-            setLines(ls);
-            newDeviceIdx = 0;
-            checkSoldDevices(deviceIds, productData.id, ls.length - 1);
-            setScannerTarget({ modal, lineIdx: ls.length - 1, deviceIdx: newDeviceIdx });
-          }
+        if (hasDuplicateDeviceId(lines, scannedDeviceId, lineIdx, deviceIdx)) {
+          toast.error(`Product ID "${scannedDeviceId}" already exists`);
+          return;
         }
       } else if (modal === 'edit') {
         if (saleForm.deviceIds.some((id, i) => i !== deviceIdx && id.trim().toLowerCase() === scannedDeviceId.toLowerCase())) {
           toast.error(`Product ID "${scannedDeviceId}" already exists in this sale`);
-          setScannerError(`Product ID "${scannedDeviceId}" already exists`);
           return;
         }
-        const updatedForm = {
-          ...saleForm,
-          dynamic_product_id: Number(productData.id),
-          unit_price: Number(productData.selling_price),
-          deviceIds: [...saleForm.deviceIds.slice(0, deviceIdx), scannedDeviceId, ...saleForm.deviceIds.slice(deviceIdx + 1)],
-          deviceSizes: [...saleForm.deviceSizes.slice(0, deviceIdx), (idIndex !== -1 ? deviceSizes[idIndex] || '' : ''), ...saleForm.deviceSizes.slice(deviceIdx + 1)],
-          quantity: saleForm.isQuantityManual ? saleForm.quantity : (saleForm.deviceIds.filter(id => id.trim()).length || 1),
-        };
-        console.log('Updated Sale Form:', updatedForm);
-        setSaleForm(updatedForm);
-        newDeviceIdx = deviceIdx;
-        checkSoldDevices(deviceIds, productData.id, 0);
-        setScannerTarget({ modal, lineIdx, deviceIdx: newDeviceIdx });
       }
 
+      updateFormWithDevice(product, scannedDeviceId, deviceSize, modal, lineIdx, deviceIdx);
       setScannerError(null);
       setScannerLoading(false);
       setManualInput('');
@@ -411,7 +359,7 @@ const checkSoldDevices = useCallback(async (deviceIds, productId, lineIdx) => {
   return () => {
     document.removeEventListener('keypress', handleKeypress);
   };
-}, [externalScannerMode, scannerTarget, showScanner, lines, saleForm, products, inventory, storeId, checkSoldDevices]);
+}, [externalScannerMode, scannerTarget, showScanner, lines, saleForm, products, inventory, storeId, checkSoldDevices, updateFormWithDevice]);
 
 
 
@@ -493,128 +441,30 @@ const onScanSuccess = async (scannedDeviceId) => {
     }
   }
 
-  // Check if device ID is already sold
-  const { data: soldData, error: soldError } = await supabase
-    .from('dynamic_sales')
-    .select('device_id')
-    .eq('device_id', scannedDeviceId)
-    .eq('store_id', storeId)
-    .single();
-  if (soldError && soldError.code !== 'PGRST116') {
-    console.error('Error checking sold status:', soldError);
-    toast.error('Failed to validate Product ID');
-    setScannerError('Failed to validate Product ID');
+  const result = await validateAndFetchDevice(scannedDeviceId, storeId);
+  if (!result.success) {
+    toast.error(result.error);
+    setScannerError(result.error);
     return false;
   }
-  if (soldData) {
-    console.log('Device ID is sold:', scannedDeviceId);
-    toast.error(`Product ID "${scannedDeviceId}" has already been sold`);
-    setScannerError(`Product ID "${scannedDeviceId}" has already been sold`);
-    return false;
-  }
-
-  // Query product details
-  const { data: productData, error } = await supabase
-    .from('dynamic_product')
-    .select('id, name, selling_price, dynamic_product_imeis, device_size')
-    .eq('store_id', storeId)
-    .ilike('dynamic_product_imeis', `%${scannedDeviceId}%`)
-    .single();
-
-  if (error || !productData) {
-    console.error('Supabase Query Error:', error);
-    toast.error(`Product ID "${scannedDeviceId}" not found`);
-    setScannerError(`Product ID "${scannedDeviceId}" not found`);
-    return false;
-  }
-
-  console.log('Found Product:', productData);
-
-  const deviceIds = productData.dynamic_product_imeis ? productData.dynamic_product_imeis.split(',').map(id => id.trim()).filter(id => id) : [];
-  const deviceSizes = productData.device_size ? productData.device_size.split(',').map(size => size.trim()).filter(size => size) : [];
-  const idIndex = deviceIds.indexOf(scannedDeviceId);
 
   if (scannerTarget) {
     const { modal, lineIdx, deviceIdx } = scannerTarget;
-    let newDeviceIdx;
 
     if (modal === 'add') {
-      const ls = [...lines];
-      const existingLineIdx = ls.findIndex(line => {
-        const product = products.find(p => p.id === line.dynamic_product_id);
-        return product && product.name === productData.name;
-      });
-
-      if (existingLineIdx !== -1) {
-        ls[existingLineIdx].deviceIds.push(scannedDeviceId);
-        ls[existingLineIdx].deviceSizes.push(idIndex !== -1 ? deviceSizes[idIndex] || '' : '');
-        if (!ls[existingLineIdx].isQuantityManual) {
-          ls[existingLineIdx].quantity = ls[existingLineIdx].deviceIds.filter(id => id.trim()).length || 1;
-        }
-        const mergedLines = ls.filter((line, idx) => {
-          if (idx === existingLineIdx) return true;
-          const product = products.find(p => p.id === line.dynamic_product_id);
-          if (product && product.name === productData.name) {
-            ls[existingLineIdx].deviceIds.push(...line.deviceIds.filter(id => id.trim()));
-            ls[existingLineIdx].deviceSizes.push(...line.deviceSizes);
-            if (!ls[existingLineIdx].isQuantityManual) {
-              ls[existingLineIdx].quantity = ls[existingLineIdx].deviceIds.filter(id => id.trim()).length || 1;
-            }
-            return false;
-          }
-          return true;
-        });
-        console.log('Updated Lines (Existing Product):', mergedLines);
-        setLines(mergedLines);
-        newDeviceIdx = ls[existingLineIdx].deviceIds.length - 1;
-        checkSoldDevices(deviceIds, productData.id, existingLineIdx);
-        setScannerTarget({ modal, lineIdx: existingLineIdx, deviceIdx: newDeviceIdx });
-      } else {
-        if (!ls[lineIdx].dynamic_product_id || ls[lineIdx].deviceIds.every(id => !id.trim())) {
-          ls[lineIdx] = {
-            ...ls[lineIdx],
-            dynamic_product_id: Number(productData.id),
-            unit_price: Number(productData.selling_price),
-            deviceIds: [scannedDeviceId],
-            deviceSizes: [idIndex !== -1 ? deviceSizes[idIndex] || '' : ''],
-            quantity: ls[lineIdx].isQuantityManual ? ls[lineIdx].quantity : 1,
-          };
-          console.log('Updated Lines (Current Line):', ls);
-          setLines(ls);
-          newDeviceIdx = 0;
-          checkSoldDevices(deviceIds, productData.id, lineIdx);
-          setScannerTarget({ modal, lineIdx, deviceIdx: newDeviceIdx });
-        } else {
-          const newLine = {
-            dynamic_product_id: Number(productData.id),
-            quantity: 1,
-            unit_price: Number(productData.selling_price),
-            deviceIds: [scannedDeviceId],
-            deviceSizes: [idIndex !== -1 ? deviceSizes[idIndex] || '' : ''],
-            isQuantityManual: false,
-          };
-          ls.push(newLine);
-          console.log('Added New Line:', ls);
-          setLines(ls);
-          newDeviceIdx = 0;
-          checkSoldDevices(deviceIds, productData.id, ls.length - 1);
-          setScannerTarget({ modal, lineIdx: ls.length - 1, deviceIdx: newDeviceIdx });
-        }
+      if (hasDuplicateDeviceId(lines, scannedDeviceId, lineIdx, deviceIdx)) {
+        toast.error(`Product ID "${scannedDeviceId}" already exists`);
+        return false;
       }
+      const { product, deviceSize } = result;
+      updateFormWithDevice(product, scannedDeviceId, deviceSize, modal, lineIdx, deviceIdx);
     } else if (modal === 'edit') {
-      const updatedForm = {
-        ...saleForm,
-        dynamic_product_id: Number(productData.id),
-        unit_price: Number(productData.selling_price),
-        deviceIds: [...saleForm.deviceIds.slice(0, deviceIdx), scannedDeviceId, ...saleForm.deviceIds.slice(deviceIdx + 1)],
-        deviceSizes: [...saleForm.deviceSizes.slice(0, deviceIdx), (idIndex !== -1 ? deviceSizes[idIndex] || '' : ''), ...saleForm.deviceSizes.slice(deviceIdx + 1)],
-        quantity: saleForm.isQuantityManual ? saleForm.quantity : (saleForm.deviceIds.filter(id => id.trim()).length || 1),
-      };
-      console.log('Updated Sale Form:', updatedForm);
-      setSaleForm(updatedForm);
-      newDeviceIdx = deviceIdx;
-      checkSoldDevices(deviceIds, productData.id, 0);
-      setScannerTarget({ modal, lineIdx, deviceIdx: newDeviceIdx });
+      if (saleForm.deviceIds.some((id, i) => i !== deviceIdx && id.trim().toLowerCase() === scannedDeviceId.toLowerCase())) {
+        toast.error(`Product ID "${scannedDeviceId}" already exists in this sale`);
+        return false;
+      }
+      const { product, deviceSize } = result;
+      updateFormWithDevice(product, scannedDeviceId, deviceSize, modal, lineIdx, deviceIdx);
     }
 
     setScannerError(null);
@@ -716,7 +566,7 @@ return () => {
     }
     html5QrCodeRef.current = null;
   };
- }, [showScanner, scannerTarget, lines, saleForm, externalScannerMode, checkSoldDevices,stopScanner, storeId, products]);
+ }, [showScanner, scannerTarget, lines, saleForm, externalScannerMode, checkSoldDevices,stopScanner, storeId, products, updateFormWithDevice]);
 
 
 
@@ -739,167 +589,43 @@ const handleManualInput = async () => {
     return;
   }
 
-  console.log('Manual Input Device ID:', trimmedInput);
-
-  // Check if device ID is already sold
-  const { data: soldData, error: soldError } = await supabase
-    .from('dynamic_sales')
-    .select('device_id')
-    .eq('device_id', trimmedInput)
-    .eq('store_id', storeId)
-    .single();
-  if (soldError && soldError.code !== 'PGRST116') {
-    console.error('Error checking sold status:', soldError);
-    toast.error('Failed to validate Product ID');
-    setScannerError('Failed to validate Product ID');
-    return;
-  }
-  if (soldData) {
-    console.log('Device ID is sold:', trimmedInput);
-    toast.error(`Product ID "${trimmedInput}" has already been sold`);
-    setScannerError(`Product ID "${trimmedInput}" has already been sold`);
+  const result = await validateAndFetchDevice(trimmedInput, storeId);
+  if (!result.success) {
+    toast.error(result.error);
+    setScannerError(result.error);
     setManualInput('');
     return;
   }
 
-  // Check if Device ID exists in dynamic_product
-  const { data: productData, error } = await supabase
-    .from('dynamic_product')
-    .select('id, name, selling_price, dynamic_product_imeis, device_size')
-    .eq('store_id', storeId)
-    .ilike('dynamic_product_imeis', `%${trimmedInput}%`)
-    .single();
-
-  if (error || !productData) {
-    console.error('Supabase Query Error:', error);
-    toast.error(`Product ID "${trimmedInput}" not found`);
-    setScannerError(`Product ID "${trimmedInput}" not found`);
-    setManualInput('');
-    return;
-  }
-
-  console.log('Found Product:', productData);
-
-  const deviceIds = productData.dynamic_product_imeis ? productData.dynamic_product_imeis.split(',').map(id => id.trim()).filter(id => id) : [];
-  const deviceSizes = productData.device_size ? productData.device_size.split(',').map(size => size.trim()).filter(size => size) : [];
-  const idIndex = deviceIds.indexOf(trimmedInput);
-
-  if (scannerTarget) {
-    const { modal, lineIdx, deviceIdx } = scannerTarget;
-    let newDeviceIdx;
-
-    if (modal === 'add') {
-      const ls = [...lines];
-      const existingLineIdx = ls.findIndex(line => {
-        const product = products.find(p => p.id === line.dynamic_product_id);
-        return product && product.name === productData.name;
-      });
-
-      if (existingLineIdx !== -1) {
-        if (ls[existingLineIdx].deviceIds.some(id => id.trim().toLowerCase() === trimmedInput.toLowerCase())) {
-          toast.error(`Product ID "${trimmedInput}" already exists in this product`);
-          setScannerError(`Product ID "${trimmedInput}" already exists`);
-          setManualInput('');
-          return;
-        }
-        ls[existingLineIdx].deviceIds.push(trimmedInput);
-        ls[existingLineIdx].deviceSizes.push(idIndex !== -1 ? deviceSizes[idIndex] || '' : '');
-        if (!ls[existingLineIdx].isQuantityManual) {
-          ls[existingLineIdx].quantity = ls[existingLineIdx].deviceIds.filter(id => id.trim()).length || 1;
-        }
-        const mergedLines = ls.filter((line, idx) => {
-          if (idx === existingLineIdx) return true;
-          const product = products.find(p => p.id === line.dynamic_product_id);
-          if (product && product.name === productData.name) {
-            ls[existingLineIdx].deviceIds.push(...line.deviceIds.filter(id => id.trim()));
-            ls[existingLineIdx].deviceSizes.push(...line.deviceSizes);
-            if (!ls[existingLineIdx].isQuantityManual) {
-              ls[existingLineIdx].quantity = ls[existingLineIdx].deviceIds.filter(id => id.trim()).length || 1;
-            }
-            return false;
-          }
-          return true;
-        });
-        console.log('Updated Lines (Existing Product):', mergedLines);
-        setLines(mergedLines);
-        newDeviceIdx = ls[existingLineIdx].deviceIds.length - 1;
-        checkSoldDevices(deviceIds, productData.id, existingLineIdx);
-        setScannerTarget({ modal, lineIdx: existingLineIdx, deviceIdx: newDeviceIdx });
-      } else {
-        if (!ls[lineIdx].dynamic_product_id || ls[lineIdx].deviceIds.every(id => !id.trim())) {
-          if (ls[lineIdx].deviceIds.some(id => id.trim().toLowerCase() === trimmedInput.toLowerCase())) {
-            toast.error(`Product ID "${trimmedInput}" already exists in this line`);
-            setScannerError(`Product ID "${trimmedInput}" already exists`);
-            setManualInput('');
-            return;
-          }
-          ls[lineIdx] = {
-            ...ls[lineIdx],
-            dynamic_product_id: Number(productData.id),
-            unit_price: Number(productData.selling_price),
-            deviceIds: [trimmedInput],
-            deviceSizes: [idIndex !== -1 ? deviceSizes[idIndex] || '' : ''],
-            quantity: ls[lineIdx].isQuantityManual ? ls[lineIdx].quantity : 1,
-          };
-          console.log('Updated Lines (Current Line):', ls);
-          setLines(ls);
-          newDeviceIdx = 0;
-          checkSoldDevices(deviceIds, productData.id, lineIdx);
-          setScannerTarget({ modal, lineIdx, deviceIdx: newDeviceIdx });
-        } else {
-          if (ls.some(line => line.deviceIds.some(id => id.trim().toLowerCase() === trimmedInput.toLowerCase()))) {
-            toast.error(`Product ID "${trimmedInput}" already exists in another product`);
-            setScannerError(`Product ID "${trimmedInput}" already exists`);
-            setManualInput('');
-            return;
-          }
-          const newLine = {
-            dynamic_product_id: Number(productData.id),
-            quantity: 1,
-            unit_price: Number(productData.selling_price),
-            deviceIds: [trimmedInput],
-            deviceSizes: [idIndex !== -1 ? deviceSizes[idIndex] || '' : ''],
-            isQuantityManual: false,
-          };
-          ls.push(newLine);
-          console.log('Added New Line:', ls);
-          setLines(ls);
-          newDeviceIdx = 0;
-          checkSoldDevices(deviceIds, productData.id, ls.length - 1);
-          setScannerTarget({ modal, lineIdx: ls.length - 1, deviceIdx: newDeviceIdx });
-        }
-      }
-    } else if (modal === 'edit') {
-      if (saleForm.deviceIds.some((id, i) => i !== deviceIdx && id.trim().toLowerCase() === trimmedInput.toLowerCase())) {
-        toast.error(`Product ID "${trimmedInput}" already exists in this sale`);
-        setScannerError(`Product ID "${trimmedInput}" already exists`);
-        setManualInput('');
-        return;
-      }
-      const updatedForm = {
-        ...saleForm,
-        dynamic_product_id: Number(productData.id),
-        unit_price: Number(productData.selling_price),
-        deviceIds: [...saleForm.deviceIds.slice(0, deviceIdx), trimmedInput, ...saleForm.deviceIds.slice(deviceIdx + 1)],
-        deviceSizes: [...saleForm.deviceSizes.slice(0, deviceIdx), (idIndex !== -1 ? deviceSizes[idIndex] || '' : ''), ...saleForm.deviceSizes.slice(deviceIdx + 1)],
-        quantity: saleForm.isQuantityManual ? saleForm.quantity : (saleForm.deviceIds.filter(id => id.trim()).length || 1),
-      };
-      console.log('Updated Sale Form:', updatedForm);
-      setSaleForm(updatedForm);
-      newDeviceIdx = deviceIdx;
-      checkSoldDevices(deviceIds, productData.id, 0);
-      setScannerTarget({ modal, lineIdx, deviceIdx: newDeviceIdx });
-    }
-
-    setScannerError(null);
-    setScannerLoading(false);
-    setManualInput('');
-    toast.success(`Added Product ID: ${trimmedInput}`);
-  } else {
-    console.error('No scanner target set');
+  if (!scannerTarget) {
     toast.error('No scanner target set');
     setManualInput('');
+    return;
   }
+
+  const { product, deviceSize } = result;
+  const { modal, lineIdx, deviceIdx } = scannerTarget;
+
+  // Duplicate checks
+  if (modal === 'add') {
+    if (hasDuplicateDeviceId(lines, trimmedInput, lineIdx, deviceIdx)) {
+      toast.error(`Product ID "${trimmedInput}" already exists`);
+      setManualInput('');
+      return;
+    }
+  } else if (modal === 'edit') {
+    if (saleForm.deviceIds.some((id, i) => i !== deviceIdx && id.trim().toLowerCase() === trimmedInput.toLowerCase())) {
+      toast.error(`Product ID "${trimmedInput}" already exists in this sale`);
+      setManualInput('');
+      return;
+    }
+  }
+
+  updateFormWithDevice(product, trimmedInput, deviceSize, modal, lineIdx, deviceIdx);
+  setScannerError(null);
+  setScannerLoading(false);
+  setManualInput('');
+  toast.success(`Added Product ID: ${trimmedInput}`);
 };
 
 
@@ -972,7 +698,7 @@ const fetchSales = useCallback(async () => {
       ...sale,
       deviceIds: sale.device_id ? sale.device_id.split(',').filter(id => id.trim()) : [],
       deviceSizes: sale.device_size ? sale.device_size.split(',').filter(size => size.trim()) : [],
-      customer_name: sale.customer?.fullname || 'Unknown', // Add customer_name
+      customer_name: sale.customer?.fullname || 'N/A', // Add customer_name
     }));
     setSales(processedSales);
     setFiltered(processedSales);
@@ -1009,6 +735,17 @@ const fetchSales = useCallback(async () => {
   }, [viewMode]);
 
 
+    /* global gtag */
+
+      useEffect(() => {
+        if (typeof gtag === 'function') {
+          gtag('event', 'sales_open', {
+            event_category: 'App',
+            event_label: 'Dashboard Loaded',
+          });
+        }
+      }, []);
+    
   
   // Form Handlers
 const handleLineChange = async (lineIdx, field, value, deviceIdx = null, isBlur = false) => {
@@ -1242,10 +979,6 @@ const handleLineChange = async (lineIdx, field, value, deviceIdx = null, isBlur 
     });
   };
 
-  const addLine = () => setLines((ls) => [
-    ...ls,
-    { dynamic_product_id: '', quantity: 1, unit_price: '', deviceIds: [''], deviceSizes: [''], isQuantityManual: false },
-  ]);
 
   const removeLine = (idx) => setLines((ls) => ls.filter((_, i) => i !== idx));
 
@@ -1338,87 +1071,101 @@ const handleEditChange = (field, value, deviceIdx = null) => {
   };
 
   // CRUD Operations
- const createSale = async (e) => {
-  e.preventDefault();
-  try {
-    if (!paymentMethod) {
-      toast.error('Please select a payment method.');
-      return;
-    }
-    for (const line of lines) {
-      if (!line.dynamic_product_id || line.quantity <= 0 || line.unit_price <= 0) {
-        toast.error('Please fill in all required fields for each sale line.');
+  const createSale = async (e) => {
+    e.preventDefault();
+    try {
+      if (!paymentMethod) {
+        toast.error('Please select a payment method.');
         return;
       }
-      const inv = inventory.find((i) => i.dynamic_product_id === line.dynamic_product_id);
-      if (!inv || inv.available_qty < line.quantity) {
-        const prod = products.find((p) => p.id === line.dynamic_product_id);
-        toast.error(`Insufficient stock for ${prod.name}: only ${inv?.available_qty || 0} available`);
-        return;
-      }
-      const deviceIds = line.deviceIds.filter(id => id.trim());
-      if (deviceIds.length > 0) {
-        const uniqueIds = new Set(deviceIds);
-        if (uniqueIds.size < deviceIds.length) {
-          toast.error('Duplicate Product IDs detected in this sale line');
+  
+      // 1️⃣ Set performer before ANY DB writes
+      await supabase.rpc('set_performer', {
+        store_id: localStorage.getItem('store_id'),
+        user_id: localStorage.getItem('user_id')
+      });
+  
+      for (const line of lines) {
+        if (!line.dynamic_product_id || line.quantity <= 0 || line.unit_price <= 0) {
+          toast.error('Please fill in all required fields for each sale line.');
           return;
         }
+  
+        const inv = inventory.find((i) => i.dynamic_product_id === line.dynamic_product_id);
+  
+        if (!inv || inv.available_qty < line.quantity) {
+          const prod = products.find((p) => p.id === line.dynamic_product_id);
+          toast.error(`Insufficient stock for ${prod.name}: only ${inv?.available_qty || 0} available`);
+          return;
+        }
+  
+        const deviceIds = line.deviceIds.filter(id => id.trim());
+        if (deviceIds.length > 0) {
+          const uniqueIds = new Set(deviceIds);
+          if (uniqueIds.size < deviceIds.length) {
+            toast.error('Duplicate Product IDs detected in this sale line');
+            return;
+          }
+        }
       }
-    }
-
-    const { data: grp, error: grpErr } = await supabase
-      .from('sale_groups')
-      .insert([{ store_id: storeId, total_amount: totalAmount, payment_method: paymentMethod, customer_id: selectedCustomerId }])
-      .select('id')
-      .single();
-    if (grpErr) throw new Error(`Sale group creation failed: ${grpErr.message}`);
-    const groupId = grp.id;
-
-    const inserts = lines.map((l) => ({
-      store_id: storeId,
-      sale_group_id: groupId,
-      dynamic_product_id: l.dynamic_product_id,
-      quantity: l.quantity,
-      unit_price: l.unit_price,
-      amount: l.quantity * l.unit_price,
-      device_id: l.deviceIds.filter(id => id.trim()).join(',') || null,
-      device_size: l.deviceSizes.map(size => size.trim() || '').join(',') || null,
-      payment_method: paymentMethod,
-      customer_id: selectedCustomerId, // Add customer_id to dynamic_sales
-    }));
-    const { error: insErr } = await supabase.from('dynamic_sales').insert(inserts);
-    if (insErr) throw new Error(`Sales insertion failed: ${insErr.message}`);
-
-    for (const line of lines) {
-      const inv = inventory.find((i) => i.dynamic_product_id === line.dynamic_product_id);
-      if (inv) {
-        const newQty = inv.available_qty - line.quantity;
-        const { error } = await supabase
-          .from('dynamic_inventory')
-          .update({ available_qty: newQty })
-          .eq('dynamic_product_id', line.dynamic_product_id)
-          .eq('store_id', storeId);
-        if (error) toast.error(`Inventory update failed for product ${line.dynamic_product_id}`);
-        setInventory((prev) =>
-          prev.map((i) =>
-            i.dynamic_product_id === line.dynamic_product_id ? { ...i, available_qty: newQty } : i
-          )
-        );
+  
+      const { data: grp, error: grpErr } = await supabase
+        .from('sale_groups')
+        .insert([{ store_id: storeId, total_amount: totalAmount, payment_method: paymentMethod, customer_id: selectedCustomerId }])
+        .select('id')
+        .single();
+  
+      if (grpErr) throw new Error(`Sale group creation failed: ${grpErr.message}`);
+      const groupId = grp.id;
+  
+      const inserts = lines.map((l) => ({
+        store_id: storeId,
+        sale_group_id: groupId,
+        dynamic_product_id: l.dynamic_product_id,
+        quantity: l.quantity,
+        unit_price: l.unit_price,
+        amount: l.quantity * l.unit_price,
+        device_id: l.deviceIds.filter(id => id.trim()).join(',') || null,
+        device_size: l.deviceSizes.map(size => size.trim() || '').join(',') || null,
+        payment_method: paymentMethod,
+        customer_id: selectedCustomerId,
+      }));
+  
+      const { error: insErr } = await supabase.from('dynamic_sales').insert(inserts);
+      if (insErr) throw new Error(`Sales insertion failed: ${insErr.message}`);
+  
+      for (const line of lines) {
+        const inv = inventory.find((i) => i.dynamic_product_id === line.dynamic_product_id);
+        if (inv) {
+          const newQty = inv.available_qty - line.quantity;
+          const { error } = await supabase
+            .from('dynamic_inventory')
+            .update({ available_qty: newQty })
+            .eq('dynamic_product_id', line.dynamic_product_id)
+            .eq('store_id', storeId);
+  
+          if (error) toast.error(`Inventory update failed for product ${line.dynamic_product_id}`);
+  
+          setInventory((prev) =>
+            prev.map((i) =>
+              i.dynamic_product_id === line.dynamic_product_id ? { ...i, available_qty: newQty } : i
+            )
+          );
+        }
       }
+  
+      toast.success('Sale added successfully!');
+      stopScanner();
+      setShowAdd(false);
+      setLines([{ dynamic_product_id: '', quantity: 1, unit_price: '', deviceIds: [''], deviceSizes: [''], isQuantityManual: false }]);
+      setPaymentMethod('Cash');
+      setSelectedCustomerId(null);
+      fetchSales();
+    } catch (err) {
+      toast.error(err.message);
     }
-
-    toast.success('Sale added successfully!');
-    stopScanner();
-    setShowAdd(false);
-    setLines([{ dynamic_product_id: '', quantity: 1, unit_price: '', deviceIds: [''], deviceSizes: [''], isQuantityManual: false }]);
-    setPaymentMethod('Cash');
-    setSelectedCustomerId(null); // Reset customer selection
-    fetchSales();
-  } catch (err) {
-    toast.error(err.message);
-  }
-};
- 
+  };
+  
 const saveEdit = async () => {
   try {
     const originalSale = sales.find((s) => s.id === editing);
@@ -1496,6 +1243,33 @@ const saveEdit = async () => {
   }
 };
 
+  const deleteSale = async (s) => {
+    if (!window.confirm(`Delete sale #${s.id}?`)) return;
+    try {
+      const { error } = await supabase.from('dynamic_sales').delete().eq('id', s.id);
+      if (error) throw new Error(`Deletion failed: ${error.message}`);
+
+      const inv = inventory.find((i) => i.dynamic_product_id === s.dynamic_product_id);
+      if (inv) {
+        const newQty = inv.available_qty + s.quantity;
+        await supabase
+          .from('dynamic_inventory')
+          .update({ available_qty: newQty })
+          .eq('dynamic_product_id', s.dynamic_product_id)
+          .eq('store_id', storeId);
+        setInventory((prev) =>
+          prev.map((i) =>
+            i.dynamic_product_id === s.dynamic_product_id ? { ...i, available_qty: newQty } : i
+          )
+        );
+      }
+
+      toast.success('Sale deleted successfully!');
+      fetchSales();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
 
   // Export Functions
   const exportCSV = () => {
@@ -1634,431 +1408,65 @@ const saveEdit = async () => {
       </div>
 
   {/* Add Sale Modal */}
-{showAdd && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center sm:items-start justify-center p-4 z-50 overflow-auto mt-0 sm:mt-16">
-    <form
-      onSubmit={createSale}
-      className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-lg w-full max-w-3xl max-h-[85vh] overflow-y-auto space-y-4"    >
-      <h2 className="text-lg sm:text-xl font-bold text-center text-gray-900 dark:text-gray-200">
-        Add Sale
-      </h2>
-      {lines.map((line, lineIdx) => (
-        <div key={lineIdx} className="border border-gray-200 dark:border-gray-700 p-3 sm:p-4 rounded-lg space-y-3 dark:bg-gray-800">
-          <div className="flex justify-between items-center">
-            <h3 className="font-semibold text-sm sm:text-base text-gray-900 dark:text-gray-200">
-              Sale Item {lineIdx + 1}
-            </h3>
-            {lines.length > 1 && (
-              <button
-                type="button"
-                onClick={() => removeLine(lineIdx)}
-                className="p-1.5 sm:p-2 bg-red-600 text-white rounded-full shadow-sm hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 transition-colors duration-200"
-                aria-label={`Remove sale item ${lineIdx + 1}`}
-                disabled={lines.length === 1}
-              >
-                <svg
-                  className="w-3.5 h-3.5 sm:w-4 sm:h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            )}
-          </div>
-          <div className="flex flex-col gap-3 sm:gap-4">
-            {[
-              { name: 'dynamic_product_id', label: 'Product', type: 'select', required: true },
-              { name: 'quantity', label: 'Quantity', type: 'number', min: 1, required: true },
-              { name: 'unit_price', label: 'Unit Price', type: 'number', step: '0.01', required: true },
-            ].map(field => (
-              <label key={field.name} className="block">
-                <span className="font-semibold block mb-1 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
-                  {field.label}
-                </span>
-                {field.type === 'select' ? (
-                  <select
-                    name={field.name}
-                    value={line[field.name] || ''}
-                    onChange={(e) => handleLineChange(lineIdx, field.name, e.target.value)}
-                    className="w-full p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-                    required={field.required}
-                  >
-                    <option value="">Select {field.label.toLowerCase()}…</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type={field.type}
-                    name={field.name}
-                    value={line[field.name] || ''}
-                    onChange={(e) => handleLineChange(lineIdx, field.name, e.target.value)}
-                    min={field.min}
-                    step={field.step}
-                    className="w-full p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-                    required={field.required}
-                  />
-                )}
-              </label>
-            ))}
-            <label className="block">
-              <span className="font-semibold block mb-1 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
-                Product IDs and Sizes (Optional)
-              </span>
-              {line.deviceIds.map((id, deviceIdx) => (
-                <div key={deviceIdx} className="flex flex-col gap-3 sm:gap-4 mt-2">
-                  <select
-                    value={id}
-                    onChange={(e) => handleLineChange(lineIdx, 'deviceIds', e.target.value, deviceIdx)}
-                    className="w-full p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-                  >
-                    <option value="">Select Product ID (Optional)</option>
-                    {(availableDeviceIds[lineIdx]?.deviceIds || []).map((deviceId) => (
-                      <option key={deviceId} value={deviceId}>{deviceId}</option>
-                    ))}
-                  </select>
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                    <input
-                      type="text"
-                      value={id}
-                      onChange={(e) => handleLineChange(lineIdx, 'deviceIds', e.target.value, deviceIdx)}
-                      onBlur={(e) => handleLineChange(lineIdx, 'deviceIds', e.target.value, deviceIdx, true)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleLineChange(lineIdx, 'deviceIds', e.target.value, deviceIdx, true);
-                        }
-                      }}
-                      placeholder="Or enter product ID manually"
-                      className="flex-1 p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-                    />
-                    <div className="flex gap-2 sm:gap-3 mt-1 sm:mt-0">
-                      <button
-                        type="button"
-                        onClick={() => openScanner('add', lineIdx, deviceIdx)}
-                        className="p-2 sm:p-2.5 bg-indigo-600 text-white rounded-full shadow-sm hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors duration-200"
-                        aria-label={`Scan barcode for product ID ${deviceIdx + 1}`}
-                      >
-                        <FaCamera className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeDeviceId(lineIdx, deviceIdx)}
-                        className="p-2 sm:p-2.5 bg-red-600 text-white rounded-full shadow-sm hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 transition-colors duration-200"
-                        aria-label={`Remove product ID ${deviceIdx + 1}`}
-                      >
-                        <svg
-                          className="w-3.5 h-3.5 sm:w-4 sm:h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                  <input
-                    type="text"
-                    value={line.deviceSizes[deviceIdx] || ''}
-                    onChange={(e) => handleLineChange(lineIdx, 'deviceSizes', e.target.value, deviceIdx)}
-                    placeholder="Enter Product/Goods/Device Size (Optional)"
-                    className="w-full p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-                  />
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={(e) => addDeviceId(e, lineIdx)}
-                className="mt-2 text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 text-sm font-semibold"
-                aria-label={`Add product ID and size for sale item ${lineIdx + 1}`}
-              >
-                + Add Product ID & Size
-              </button>
-            </label>
-            <label className="block">
-              <span className="font-semibold block mb-1 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
-                Payment Method
-              </span>
-              <select
-                value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
-                className="w-full p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-                required
-              >
-                <option value="">Select payment method…</option>
-                <option>Cash</option>
-                <option>Bank Transfer</option>
-                <option>Card</option>
-                <option>Wallet</option>
-              </select>
-            </label>
-             <CustomerSelector
-    storeId={storeId}
-    selectedCustomerId={selectedCustomerId}
-    onCustomerChange={setSelectedCustomerId}
-  />
-
-          </div>
-        </div>
-      ))}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 mt-4">
-        <div className="text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-200">
-          Total: ₦{totalAmount.toFixed(2)}
-        </div>
-        <button
-          type="button"
-          onClick={addLine}
-          className="p-2 sm:p-3 bg-green-600 text-white rounded-full shadow-sm hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 transition-colors duration-200 w-full sm:w-auto flex items-center justify-center gap-2"
-          aria-label="Add another sale item"
-        >
-          <svg
-            className="w-4 h-4 sm:w-5 sm:h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-          </svg>
-          <span className="text-sm sm:text-base">Add Item</span>
-        </button>
-        <div className="flex justify-end gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              stopScanner();
-              setShowAdd(false);
-            }}
-            className="p-2 sm:p-2.5 bg-gray-500 text-white rounded-full shadow-sm hover:bg-gray-600 dark:bg-gray-600 dark:hover:bg-gray-500 transition-colors duration-200 min-w-[40px] sm:min-w-[48px] flex items-center justify-center"
-            aria-label="Cancel add sale form"
-          >
-            <svg
-              className="w-4 h-4 sm:w-5 sm:h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-          <button
-            type="submit"
-            className="p-2 sm:p-2.5 bg-indigo-600 text-white rounded-full shadow-sm hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors duration-200 min-w-[40px] sm:min-w-[48px] flex items-center justify-center"
-            aria-label="Save add sale"
-          >
-            <svg
-              className="w-4 h-4 sm:w-5 sm:h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    </form>
-  </div>
-)}
+  {showAdd && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center sm:items-start justify-center p-4 z-50 overflow-auto mt-0 sm:mt-16">
+      <SalesForm
+        type="add"
+        onSubmit={createSale}
+        onCancel={() => { stopScanner(); setShowAdd(false); }}
+        lines={lines}
+        setLines={setLines}
+        removeLine={removeLine}
+        products={products}
+        handleLineChange={handleLineChange}
+        availableDeviceIds={availableDeviceIds}
+        openScanner={openScanner}
+        removeDeviceId={removeDeviceId}
+        addDeviceId={addDeviceId}
+        paymentMethod={paymentMethod}
+        setPaymentMethod={setPaymentMethod}
+        storeId={storeId}
+        selectedCustomerId={selectedCustomerId}
+        setSelectedCustomerId={setSelectedCustomerId}
+        totalAmount={totalAmount}
+      />
+    </div>
+  )}
 
 
-{/* Edit Sale Modal */}
-{editing && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center sm:items-start justify-center p-4 z-50 overflow-auto mt-0 sm:mt-16">
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        saveEdit();
-      }}
-      className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-lg w-full max-w-3xl max-h-[85vh] overflow-y-auto space-y-4"
-    >
-      <h2 className="text-lg sm:text-xl font-bold text-center text-gray-900 dark:text-gray-200">
-        Edit Sale #{editing}
-      </h2>
-      <div className="flex flex-col gap-3 sm:gap-4">
-        {[
-          { name: 'dynamic_product_id', label: 'Product', type: 'select', required: true },
-          { name: 'quantity', label: 'Quantity', type: 'number', min: 1, required: true },
-          { name: 'unit_price', label: 'Unit Price', type: 'number', step: '0.01', required: true },
-          { name: 'payment_method', label: 'Payment Method', type: 'select', required: true },
-        ].map(field => (
-          <label key={field.name} className="block">
-            <span className="font-semibold block mb-1 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
-              {field.label}
-            </span>
-            {field.type === 'select' ? (
-              <select
-                name={field.name}
-                value={saleForm[field.name] || ''}
-                onChange={(e) => handleEditChange(field.name, e.target.value)}
-                className="w-full p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-                required={field.required}
-              >
-                {field.name === 'dynamic_product_id' ? (
-                  <>
-                    <option value="">Select product…</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </>
-                ) : (
-                  <>
-                    <option value="">Select payment method…</option>
-                    <option>Cash</option>
-                    <option>Bank Transfer</option>
-                    <option>Card</option>
-                    <option>Wallet</option>
-                  </>
-                )}
-              </select>
-            ) : (
-              <input
-                type={field.type}
-                name={field.name}
-                value={saleForm[field.name] || ''}
-                onChange={(e) => handleEditChange(field.name, e.target.value)}
-                min={field.min}
-                step={field.step}
-                className="w-full p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-                required={field.required}
-              />
-            )}
-          </label>
-        ))}
-        <CustomerSelector
-          storeId={storeId}
-          selectedCustomerId={saleForm.customer_id}
-          onCustomerChange={(value) => handleEditChange('customer_id', value)}
-        />
-        <label className="block">
-          <span className="font-semibold block mb-1 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
-            Product IDs and Sizes (Optional)
-          </span>
-          {saleForm.deviceIds.map((id, deviceIdx) => (
-            <div key={`edit-device-${deviceIdx}`} className="flex flex-col gap-3 sm:gap-4 mt-2">
-              <select
-                value={id}
-                onChange={(e) => handleEditChange('deviceIds', e.target.value, deviceIdx)}
-                className="w-full p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-              >
-                <option value="">Select Product ID (Optional)</option>
-                {(availableDeviceIds[0]?.deviceIds || []).map((deviceId) => (
-                  <option key={deviceId} value={deviceId}>{deviceId}</option>
-                ))}
-              </select>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                <input
-                  type="text"
-                  value={id}
-                  onChange={(e) => handleEditChange('deviceIds', e.target.value, deviceIdx)}
-                  placeholder="Or enter Product ID manually"
-                  className="flex-1 p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-                />
-                <div className="flex gap-2 sm:gap-3 mt-1 sm:mt-0">
-                  <button
-                    type="button"
-                    onClick={() => openScanner('edit', 0, deviceIdx)}
-                    className="p-2 sm:p-2.5 bg-indigo-600 text-white rounded-full shadow-sm hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors duration-200"
-                    aria-label={`Scan barcode for product ID ${deviceIdx + 1}`}
-                  >
-                    <FaCamera className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeEditDeviceId(deviceIdx)}
-                    className="p-2 sm:p-2.5 bg-red-600 text-white rounded-full shadow-sm hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600 transition-colors duration-200"
-                    aria-label={`Remove product ID ${deviceIdx + 1}`}
-                  >
-                    <svg
-                      className="w-3.5 h-3.5 sm:w-4 sm:h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <input
-                type="text"
-                value={saleForm.deviceSizes[deviceIdx] || ''}
-                onChange={(e) => handleEditChange('deviceSizes', e.target.value, deviceIdx)}
-                placeholder="Enter Product size (Optional)"
-                className="w-full p-2 sm:p-3 border rounded-lg dark:bg-gray-900 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-indigo-500 text-sm min-w-[100px]"
-              />
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={(e) => addEditDeviceId(e)}
-            className="mt-2 text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 text-sm font-semibold"
-            aria-label="Add product ID and size"
-          >
-            + Add Product ID & Size
-          </button>
-        </label>
-      </div>
-      <div className="flex justify-end gap-2 sm:gap-3 mt-4">
-        <button
-          type="button"
-          onClick={async () => {
-            await stopScanner();
-            setShowScanner(false);
-            setScannerTarget(null);
-            setScannerError(null);
-            setScannerLoading(false);
-            setManualInput('');
-            setExternalScannerMode(false);
-            setEditing(null);
-            setSelectedCustomerId(null); // Reset customer selection
-          }}
-          className="p-2 sm:p-2.5 bg-gray-500 text-white rounded-full shadow-sm hover:bg-gray-600 dark:bg-gray-600 dark:hover:bg-gray-500 transition-colors duration-200 min-w-[40px] sm:min-w-[48px] flex items-center justify-center"
-          aria-label="Cancel edit sale form"
-        >
-          <svg
-            className="w-4 h-4 sm:w-5 sm:h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-        <button
-          type="submit"
-          className="p-2 sm:p-2.5 bg-indigo-600 text-white rounded-full shadow-sm hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors duration-200 min-w-[40px] sm:min-w-[48px] flex items-center justify-center"
-          aria-label="Save edit sale"
-        >
-          <svg
-            className="w-4 h-4 sm:w-5 sm:h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-          </svg>
-        </button>
-      </div>
-    </form>
-  </div>
-)}
+  {/* Edit Sale Modal */}
+  {editing && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center sm:items-start justify-center p-4 z-50 overflow-auto mt-0 sm:mt-16">
+      <SalesForm
+        type="edit"
+        onSubmit={(e) => { e.preventDefault(); saveEdit(); }}
+        onCancel={async () => {
+          await stopScanner();
+          setShowScanner(false);
+          setScannerTarget(null);
+          setScannerError(null);
+          setScannerLoading(false);
+          setManualInput('');
+          setExternalScannerMode(false);
+          setEditing(null);
+          setSelectedCustomerId(null);
+        }}
+        products={products}
+        availableDeviceIds={availableDeviceIds}
+        openScanner={openScanner}
+        saleForm={saleForm}
+        handleEditChange={handleEditChange}
+        addEditDeviceId={addEditDeviceId}
+        removeEditDeviceId={removeEditDeviceId}
+        storeId={storeId}
+      />
+    </div>
+  )}
 
       {showDetailModal && (
   <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 z-50">
     <div className="bg-white dark:bg-gray-900 p-6 rounded-lg shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
-      <h2 className="text-xl font-semibold mb-6">Product IDs and Sizes</h2>
+      <h2 className="text-xl font-semibold mb-6">Productss IDs and Sizes</h2>
       <ul className="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
         {paginatedDevices.map((device, i) => {
           const displayText = `ID: ${device.id || '-'} (size: ${device.size || '-'})`;
@@ -2111,168 +1519,56 @@ const saveEdit = async () => {
 )}
 
       {/* Scanner Modal */}
-      {showScanner && (
-       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center p-4 z-50 overflow-auto mt-16">
-    <div className="bg-white rounded-lg shadow-lg w-full max-w-full sm:max-w-lg max-h-[85vh] overflow-y-auto p-4 sm:p-6 space-y-4 dark:bg-gray-900 dark:text-white">
-      <h2 className="text-lg sm:text-xl font-bold text-center text-gray-900 dark:text-gray-200">
-        Scan Product ID
-      </h2>
-              <div className="space-y-4">
-        <label className="flex items-center gap-2 text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300">
-                <input
-                  type="checkbox"
-                  checked={externalScannerMode}
-                  onChange={() => setExternalScannerMode((prev) => !prev)}
-                  className="h-4 w-4 text-indigo-600 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600"
-                />
-                <span>Use External Barcode Scanner</span>
-              </label>
-            </div>
-            {!externalScannerMode && (
-              <>
-                {scannerLoading && (
-                  <div className="text-gray-600 dark:text-gray-400 mb-4">Initializing webcam scanner...</div>
-                )}
-                {scannerError && (
-                  <div className="text-red-600 dark:text-red-400 mb-4">{scannerError}</div>
-                )}
-                <div
-                  id="scanner"
-                  ref={scannerDivRef}
-                  className="relative w-full h-64 mb-4 bg-gray-100 dark:bg-gray-800"
-                >
-                  <video
-                    ref={videoRef}
-                    className="w-full h-full object-cover"
-                    autoPlay
-                    playsInline
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-[250px] h-[100px] border-2 border-red-500 bg-transparent opacity-50"></div>
-                  </div>
-                </div>
-              </>
-            )}
-          
-            {externalScannerMode && (
-              <div className="text-gray-600 dark:text-gray-400 mb-4">
-                Waiting for external scanner input... Scan a barcode to proceed.
-              </div>
-            )}
-           <div className="mb-4">
-  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-    Or Enter Product ID Manually
-  </label>
-  
-  <div className="flex flex-col sm:flex-row gap-2">
-    <input
-      type="text"
-      value={manualInput}
-      onChange={(e) => setManualInput(e.target.value)}
-      placeholder="Enter Product ID"
-      className="w-full sm:flex-1 p-2 border rounded dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-    />
-    
-    <button
-      type="button"
-      onClick={handleManualInput}
-      className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 w-full sm:w-auto"
-    >
-      Submit
-    </button>
-  </div>
-</div>
-
-<div className="flex justify-end">
-<button
-  type="button"
-  onClick={() => {
-    setShowScanner(false);
-    setScannerTarget(null);
-    setScannerError(null);
-    setScannerLoading(false);
-    setManualInput('');
-    setExternalScannerMode(false);
-    stopScanner();
-  }}
-  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600"
->
-  Done
-</button>
-</div>
-
-          </div>
-        </div>
-      )}
+      <ScannerModal
+        show={showScanner}
+        externalScannerMode={externalScannerMode}
+        setExternalScannerMode={setExternalScannerMode}
+        scannerLoading={scannerLoading}
+        scannerError={scannerError}
+        scannerDivRef={scannerDivRef}
+        videoRef={videoRef}
+        manualInput={manualInput}
+        setManualInput={setManualInput}
+        handleManualInput={handleManualInput}
+        onDone={() => {
+          setShowScanner(false);
+          setScannerTarget(null);
+          setScannerError(null);
+          setScannerLoading(false);
+          setManualInput('');
+          setExternalScannerMode(false);
+          stopScanner();
+        }}
+      />
 
       {/* Sales Table */}
-      <div className="overflow-x-auto rounded-lg shadow">
-           
-         {viewMode === 'list' ? (
-           <table className="min-w-full bg-white dark:bg-gray-900 divide-y divide-gray-200">
-             <thead className="bg-gray-100 dark:bg-gray-800">
-              <tr>
-    {['Product', 'Customer', 'Quantity', 'Unit Price', 'Amount', 'Payment', 'Product IDs/Sizes', 'Date Sold'].map((h) => (
-      <th
-        key={h}
-        className="px-4 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200"
-      >
-        {h}
-      </th>
-    ))}
-  </tr>
-</thead>
-           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-  {paginatedSales.map((s, idx) => (
-    <tr key={s.id}>
-      <td className="px-4 py-2 text-sm">{s.dynamic_product.name}</td>
-      <td className="px-4 py-2 text-sm">{s.customer_name}</td> {/* Add Customer Name */}
-      <td className="px-4 py-2 text-sm">{s.quantity}</td>
-      <td className="px-4 py-2 text-sm">₦{formatCurrency(s.unit_price)}</td>
-      <td className="px-4 py-2 text-sm">₦{formatCurrency(s.amount)}</td>
-      <td className="px-4 py-2 text-sm">{s.payment_method}</td>
-      <td className="px-4 py-2 text-sm">
-        {s.deviceIds.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => openDetailModal(s)}
-            className="text-indigo-600 hover:underline focus:outline-none"
-          >
-            View {s.deviceIds.length} ID{s.deviceIds.length !== 1 ? 's' : ''}
-          </button>
-        ) : (
-          '-'
-        )}
-      </td>
-      <td className="px-4 py-2 text-sm">{new Date(s.sold_at).toLocaleString()}</td>
-     
-      
-    </tr>
-  ))}
-</tbody>
-
-           </table>
-         ) : (
-           <table className="min-w-full bg-white dark:bg-gray-900 divide-y divide-gray-200">
-             <thead className="bg-gray-100 dark:bg-gray-800">
-               <tr>
-                 <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">Period</th>
-                 <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">Total Sales (₦)</th>
-                 <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">Number of Sales</th>
-               </tr>
-             </thead>
-             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-               {paginatedTotals.map((t, idx) => (
-                 <tr key={idx}>
-                   <td className="px-4 py-2 text-sm">{t.period}</td>
-                   <td className="px-4 py-2 text-sm">₦{formatCurrency(t.total)}</td>
-                   <td className="px-4 py-2 text-sm">{t.count}</td>
-                 </tr>
-               ))}
-             </tbody>
-           </table>
-         )}
-       </div>
+      <SalesTable
+        viewMode={viewMode}
+        paginatedSales={paginatedSales}
+        totalsData={totalsData}
+        paginatedTotals={paginatedTotals}
+        openDetailModal={openDetailModal}
+        formatCurrency={(v) => formatCurrency(v)}
+        onEdit={(s) => {
+          setEditing(s.id);
+          setSaleForm({
+            dynamic_product_id: s.dynamic_product_id,
+            quantity: s.quantity,
+            unit_price: s.unit_price,
+            deviceIds: s.deviceIds.length > 0 ? s.deviceIds : [''],
+            deviceSizes: s.deviceSizes.length > 0 ? s.deviceSizes : [''],
+            payment_method: s.payment_method,
+            customer_id: s.customer_id,
+            isQuantityManual: false,
+          });
+          setSelectedCustomerId(s.customer_id);
+          const product = products.find(p => p.id === s.dynamic_product_id);
+          if (product) {
+            checkSoldDevices(product.deviceIds, s.dynamic_product_id, 0);
+          }
+        }}
+        onDelete={(s) => deleteSale(s)}
+      />
 
         {/* Pagination */}
         <div className="flex flex-wrap justify-center items-center gap-2 mt-4">
@@ -2344,7 +1640,7 @@ const saveEdit = async () => {
             <div className="flex justify-between items-center">
               <div>
                 <span className="text-sm text-gray-300 dark:text-gray-400">
-                  Step ${onboardingStep + 1} of ${totalOnboardingSteps.length}
+                  {`Step ${onboardingStep + 1} of ${onboardingSteps.length}`}
                 </span>
                 <div className="space-x-3">
                   <button
