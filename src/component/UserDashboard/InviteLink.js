@@ -57,7 +57,7 @@ const InviteGenerator = () => {
   };
 
   return (
-    <div className="p-4 dark:bg-gray-800 dark:text-white rounded shadow max-w-xl mx-auto">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 bg-white dark:bg-gray-800 text-gray-700 dark:text-white">
       <h2 className="text-xl font-bold text-indigo-800 dark:text-indigo-200 mb-4">
         Create Invite
       </h2>

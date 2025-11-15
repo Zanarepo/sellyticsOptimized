@@ -5,19 +5,16 @@ import {
   FaBars,
   FaTimes,
   FaQrcode,
-  //FaBarcode,
-  FaIdBadge,
   FaBell,
   FaUsersCog,
   FaCrown,
   FaHome,
   FaRobot,
-  FaWrench ,
   FaUserShield,
   FaMoneyBillWave,
 } from 'react-icons/fa';
 import UserOnboardingTour from './UserOnboardingTour';
-import Employees from './Employees';
+
 import Profile from './Profile';
 import Variex from './Variex';
 
@@ -27,8 +24,8 @@ import ERetailStores from './ERetailStores';
 import AIpowerInsights from './AIpowerInsights';
 import AdminOps from './AdminOps';
 import Financials from '../UserDashboard/Financials';
-import StoreAdmins from './StoreAdmins';
-import NotificationAlertReports from './NotificationAlertReports'
+import AlertDashboard from './AlertDashboard'
+
 
 
 const Dashboard = () => {
@@ -109,18 +106,16 @@ useEffect(() => {
             <Financials />
           </div>
         );
-      case 'Store Admins':
-        return (
-          <div className="w-full bg-white dark:bg-gray-900 p-4">
-            <StoreAdmins />
-          </div>
-        );
-      case 'Employees':
-        return (
-          <div className="w-full bg-white dark:bg-gray-900 p-4">
-            <Employees />
-          </div>
-        );
+
+
+        case 'Store Settings':
+          return (
+            <div className="w-full bg-white dark:bg-gray-900 p-4">
+              <AlertDashboard />
+            </div>
+          );
+
+
       case 'Upgrade':
         return (
           <div className="w-full bg-white dark:bg-gray-900 p-4">
@@ -133,14 +128,6 @@ useEffect(() => {
               <Profile />
             </div>
           );
-
-          case 'Alert Settings':
-            return (
-              <div className="w-full bg-white dark:bg-gray-900 p-4">
-                <NotificationAlertReports />
-              </div>
-            );
-
 
         
       default:
@@ -170,12 +157,11 @@ useEffect(() => {
     { name: 'AI Insights', icon: FaRobot, aria: 'AI Insights: Explore AI-driven insights for your store' },
     { name: 'Financials', icon: FaMoneyBillWave, aria: 'Financials: View and edit your financial data' },
     { name: 'Admin Ops', icon: FaUserShield, aria: 'Admin Ops: Manage store operations like clocking, tasks, and schedules' },
+    { name: 'Store Settings', icon: FaUsersCog, aria: 'Manage all your activities and alert here' },
     { name: 'Notifications', icon: FaBell, aria: 'Notifications: Stay updated with store-related notifications' },
-    { name: 'Employees', icon: FaIdBadge, aria: 'Employees: Manage store employees' },
     { name: 'Upgrade', icon: FaCrown, aria: 'Upgrade: Upgrade your plan for more features' },
-    { name: 'Store Admins', icon: FaUsersCog, aria: 'Manage your staff and assign roles' },
     { name: 'Profile', icon: FaUser, aria: 'Profile: View and edit your profile' },
-    { name: 'Alert Settings', icon: FaWrench , aria: 'Alert Settings: Manage what type of alert that you want to receive ' },
+  
     
   ];
 

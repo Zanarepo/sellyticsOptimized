@@ -19,10 +19,8 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 p-4">
-      <h1 className="text-3xl font-bold text-center text-indigo-800 dark:text-white mb-6">
-        Dashboard
-      </h1>
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 bg-white dark:bg-gray-800  text-gray-700 dark:text-white">
+  
       
       {/* Icon Navigation */}
       <div className="flex justify-center mb-6">

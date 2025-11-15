@@ -73,7 +73,7 @@ const TeamManagement = () => {
   };
 
   return (
-    <div className="p-4 bg-white dark:bg-gray-900 rounded shadow max-w-4xl mx-auto">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg text-gray-700 dark:text-white">
       <h2 className="text-2xl font-bold text-indigo-800 dark:text-white mb-4">
         Team Management
       </h2>

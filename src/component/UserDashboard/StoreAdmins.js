@@ -3,7 +3,7 @@ import { supabase } from '../../supabaseClient';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { FaSave, FaUserEdit, FaSync, FaTrash, FaSearch } from 'react-icons/fa';
-import DashboardAccess from '../Ops/DashboardAccess';
+//import DashboardAccess from '../Ops/DashboardAccess';
 
 // Error boundary for ToastContainer
 class ToastErrorBoundary extends Component {
@@ -257,9 +257,7 @@ export default function StoreAdminDashboard() {
     return (
       <div className="w-full bg-white dark:bg-gray-900 p-4 max-w-7xl mx-auto ">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
-          <h2 className="text-lg sm:text-2xl font-semibold text-indigo-700 dark:text-indigo-200">
-            Manage Staff Access & Roles
-          </h2>
+          
           <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-4 w-full sm:w-auto">
             <div className="relative w-full sm:w-64">
               <input
@@ -403,15 +401,8 @@ export default function StoreAdminDashboard() {
           limit={1}
         />
       </ToastErrorBoundary>
-      <DashboardAccess />
-      <header className="text-center mb-4 sm:mb-6">
-        <h1 className="text-lg sm:text-3xl font-bold text-indigo-800 dark:text-white">
-          Welcome, {shopName}!
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2 text-xs sm:text-sm">
-          Manage your store’s staff and their access.
-        </p>
-      </header>
+     
+      
       {renderContent()}
     </div>
   );

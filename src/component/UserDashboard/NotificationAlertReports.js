@@ -9,6 +9,7 @@ export default function NotificationSettings() {
     enable_low_stock: false,
     enable_sales_summary: false,
     enable_product_events: false,
+    enable_sales_events: false,
     email_enabled: true,
     frequency: "daily",
     reporting_period: "daily", // ✅ Added
@@ -94,6 +95,7 @@ export default function NotificationSettings() {
         enable_low_stock: false,
         enable_sales_summary: false,
         enable_product_events: false,
+        enable_sales_events: false,
         email_enabled: true,
         frequency: "daily",
         reporting_period: "daily", // ✅ reset
@@ -126,13 +128,14 @@ export default function NotificationSettings() {
  
   return (
     <div className="p-6 grid gap-4">
-      <div className="flex flex-col space-y-4 p-4 border rounded-lg shadow-md ">
+      <div className="flex flex-col space-y-4 p-4 border  ">
         <h2 className="text-xl font-bold dark:text-white">Alert Notification Settings</h2>
         <div className="p-4 border space-y-4 rounded-lg dark:text-white">
         {renderSwitch("Email Enabled", "email_enabled")}
         {renderSwitch("Low Inventory Alerts", "enable_low_stock")}
         {renderSwitch("Sales Summary", "enable_sales_summary")}
         {renderSwitch("Product Insert/Update/Delete", "enable_product_events")}
+        {renderSwitch("Sales Insert/Update/Delete", "enable_sales_events")}
         </div>
 {/* </div>
         <div className="flex items-center justify-between">

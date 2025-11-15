@@ -13,11 +13,11 @@ import 'react-toastify/dist/ReactToastify.css';
 
 import { motion } from 'framer-motion';
 import { Html5Qrcode, Html5QrcodeSupportedFormats, Html5QrcodeScannerState } from 'html5-qrcode';
-import ScannerModal from './components/ScannerModal';
+import ScannerModal from '../DynamicSales/components/ScannerModal';
 import SalesForm from './components/SalesForm';
-import SalesTable from './components/SalesTable';
+import SalesTable from '../DynamicSales/components/SalesTable';
 import { validateAndFetchDevice, hasDuplicateDeviceId } from '../../utils/deviceValidation';
-
+import CreateCustomer from './CreateCustomer'
 const tooltipVariants = {
   hidden: { opacity: 0, y: 10 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
@@ -75,7 +75,8 @@ const playSuccessSound = () => {
   const lastScanTimeRef = useRef(0);
 const lastScannedCodeRef = useRef(null);
 const [selectedCustomerId, setSelectedCustomerId] = useState(null);
-
+// In SalesTracker.js
+const [emailReceipt, setEmailReceipt] = useState(false);
  
 
   // Refs
@@ -1070,54 +1071,69 @@ const handleEditChange = (field, value, deviceIdx = null) => {
     setShowDetailModal(true);
   };
 
-  // CRUD Operations
   const createSale = async (e) => {
-    e.preventDefault();
+    // Prevent default if called from form submit
+    if (e?.preventDefault) e.preventDefault();
+  
     try {
+      // === 1. Validation ===
       if (!paymentMethod) {
         toast.error('Please select a payment method.');
         return;
       }
   
-      // 1️⃣ Set performer before ANY DB writes
-      await supabase.rpc('set_performer', {
-        store_id: localStorage.getItem('store_id'),
-        user_id: localStorage.getItem('user_id')
-      });
-  
-      for (const line of lines) {
+      // Validate each line
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         if (!line.dynamic_product_id || line.quantity <= 0 || line.unit_price <= 0) {
-          toast.error('Please fill in all required fields for each sale line.');
+          toast.error(`Please fill in all required fields for item ${i + 1}.`);
           return;
         }
   
         const inv = inventory.find((i) => i.dynamic_product_id === line.dynamic_product_id);
-  
         if (!inv || inv.available_qty < line.quantity) {
           const prod = products.find((p) => p.id === line.dynamic_product_id);
-          toast.error(`Insufficient stock for ${prod.name}: only ${inv?.available_qty || 0} available`);
+          toast.error(
+            `Insufficient stock for ${prod?.name || 'product'}: only ${inv?.available_qty || 0} available`
+          );
           return;
         }
   
-        const deviceIds = line.deviceIds.filter(id => id.trim());
+        const deviceIds = line.deviceIds.filter((id) => id.trim());
         if (deviceIds.length > 0) {
           const uniqueIds = new Set(deviceIds);
           if (uniqueIds.size < deviceIds.length) {
-            toast.error('Duplicate Product IDs detected in this sale line');
+            toast.error(`Duplicate Product ID detected in item ${i + 1}`);
             return;
           }
         }
       }
   
+      // === 2. Set performer (audit trail) ===
+      await supabase.rpc('set_performer', {
+        store_id: localStorage.getItem('store_id'),
+        user_id: localStorage.getItem('user_id'),
+      });
+  
+      // === 3. Create sale group with email_receipt ===
       const { data: grp, error: grpErr } = await supabase
         .from('sale_groups')
-        .insert([{ store_id: storeId, total_amount: totalAmount, payment_method: paymentMethod, customer_id: selectedCustomerId }])
+        .insert([
+          {
+            store_id: storeId,
+            total_amount: totalAmount,
+            payment_method: paymentMethod,
+            customer_id: selectedCustomerId || null,
+            email_receipt: emailReceipt, // Correct boolean value
+          },
+        ])
         .select('id')
         .single();
   
       if (grpErr) throw new Error(`Sale group creation failed: ${grpErr.message}`);
       const groupId = grp.id;
   
+      // === 4. Prepare sale lines ===
       const inserts = lines.map((l) => ({
         store_id: storeId,
         sale_group_id: groupId,
@@ -1125,15 +1141,17 @@ const handleEditChange = (field, value, deviceIdx = null) => {
         quantity: l.quantity,
         unit_price: l.unit_price,
         amount: l.quantity * l.unit_price,
-        device_id: l.deviceIds.filter(id => id.trim()).join(',') || null,
-        device_size: l.deviceSizes.map(size => size.trim() || '').join(',') || null,
+        device_id: l.deviceIds.filter((id) => id.trim()).join(',') || null,
+        device_size: l.deviceSizes.filter((s) => s.trim()).join(',') || null,
         payment_method: paymentMethod,
-        customer_id: selectedCustomerId,
+        customer_id: selectedCustomerId || null,
       }));
   
+      // === 5. Insert into dynamic_sales ===
       const { error: insErr } = await supabase.from('dynamic_sales').insert(inserts);
       if (insErr) throw new Error(`Sales insertion failed: ${insErr.message}`);
   
+      // === 6. Update inventory ===
       for (const line of lines) {
         const inv = inventory.find((i) => i.dynamic_product_id === line.dynamic_product_id);
         if (inv) {
@@ -1144,25 +1162,50 @@ const handleEditChange = (field, value, deviceIdx = null) => {
             .eq('dynamic_product_id', line.dynamic_product_id)
             .eq('store_id', storeId);
   
-          if (error) toast.error(`Inventory update failed for product ${line.dynamic_product_id}`);
-  
-          setInventory((prev) =>
-            prev.map((i) =>
-              i.dynamic_product_id === line.dynamic_product_id ? { ...i, available_qty: newQty } : i
-            )
-          );
+          if (error) {
+            console.error('Inventory update failed:', error);
+            toast.warn(`Warning: Inventory not updated for product ID ${line.dynamic_product_id}`);
+          } else {
+            setInventory((prev) =>
+              prev.map((i) =>
+                i.dynamic_product_id === line.dynamic_product_id
+                  ? { ...i, available_qty: newQty }
+                  : i
+              )
+            );
+          }
         }
       }
   
-      toast.success('Sale added successfully!');
+      // === 7. Success & Reset ===
+      toast.success('Sale created successfully!');
+      
+      // Reset scanner
       stopScanner();
+  
+      // Close modal
       setShowAdd(false);
-      setLines([{ dynamic_product_id: '', quantity: 1, unit_price: '', deviceIds: [''], deviceSizes: [''], isQuantityManual: false }]);
+  
+      // Reset form
+      setLines([
+        {
+          dynamic_product_id: '',
+          quantity: 1,
+          unit_price: '',
+          deviceIds: [''],
+          deviceSizes: [''],
+          isQuantityManual: false,
+        },
+      ]);
       setPaymentMethod('Cash');
       setSelectedCustomerId(null);
+      setEmailReceipt(false); // Reset email receipt
+  
+      // Refresh sales
       fetchSales();
     } catch (err) {
-      toast.error(err.message);
+      console.error('Sale creation error:', err);
+      toast.error(err.message || 'Failed to create sale. Please try again.');
     }
   };
   
@@ -1371,7 +1414,7 @@ const saveEdit = async () => {
   return (
     <div className="p-2 max-w-7xl mx-auto dark:bg-gray-900 dark:text-white">
       <ToastContainer position="top-right" autoClose={3000} />
-   
+    
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full sm:w-auto">
@@ -1385,8 +1428,11 @@ const saveEdit = async () => {
               <option value="list">Individual Sales</option>
               <option value="daily">Daily Totals</option>
               <option value="weekly">Weekly Totals</option>
+            
             </select>
+              
           </div>
+       
           {viewMode === 'list' && (
             <input
               type="text"
@@ -1396,9 +1442,11 @@ const saveEdit = async () => {
               className="p-2 border rounded w-full sm:w-64 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 search-input"
             />
           )}
+             <CreateCustomer/>
         </div>
-        
+    
         <button
+        
   onClick={() => setShowAdd(true)}
   className="flex items-center justify-center gap-2 px-4 py-2 text-sm sm:text-base bg-indigo-600 text-white rounded-md hover:bg-indigo-700 w-full sm:w-auto new-sale-button"
 >
@@ -1429,39 +1477,53 @@ const saveEdit = async () => {
         selectedCustomerId={selectedCustomerId}
         setSelectedCustomerId={setSelectedCustomerId}
         totalAmount={totalAmount}
+        emailReceipt={emailReceipt}          // ADD THIS
+    setEmailReceipt={setEmailReceipt}
+        
       />
     </div>
   )}
 
 
   {/* Edit Sale Modal */}
-  {editing && (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center sm:items-start justify-center p-4 z-50 overflow-auto mt-0 sm:mt-16">
-      <SalesForm
-        type="edit"
-        onSubmit={(e) => { e.preventDefault(); saveEdit(); }}
-        onCancel={async () => {
-          await stopScanner();
-          setShowScanner(false);
-          setScannerTarget(null);
-          setScannerError(null);
-          setScannerLoading(false);
-          setManualInput('');
-          setExternalScannerMode(false);
-          setEditing(null);
-          setSelectedCustomerId(null);
-        }}
-        products={products}
-        availableDeviceIds={availableDeviceIds}
-        openScanner={openScanner}
-        saleForm={saleForm}
-        handleEditChange={handleEditChange}
-        addEditDeviceId={addEditDeviceId}
-        removeEditDeviceId={removeEditDeviceId}
-        storeId={storeId}
-      />
-    </div>
-  )}
+
+{editing && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center sm:items-start justify-center p-4 z-50 overflow-auto mt-0 sm:mt-16">
+<SalesForm
+  type="edit"
+  onSubmit={(data) => {
+    // data contains saleForm, paymentMethod, selectedCustomerId, etc.
+    saveEdit(data);
+  }}
+  onCancel={async () => {
+    // reset scanner and editing state
+    await stopScanner();
+    setShowScanner(false);
+    setScannerTarget(null);
+    setScannerError(null);
+    setScannerLoading(false);
+    setManualInput('');
+    setExternalScannerMode(false);
+    setEditing(null);
+    setSelectedCustomerId(null);
+      
+  }}
+  products={products}
+  availableDeviceIds={availableDeviceIds}
+  openScanner={openScanner}
+  saleForm={saleForm}
+  handleEditChange={handleEditChange}
+  addEditDeviceId={addEditDeviceId}
+  removeEditDeviceId={removeEditDeviceId}
+  storeId={storeId}
+    emailReceipt={emailReceipt}        // ADD THIS
+    setEmailReceipt={setEmailReceipt}
+        
+/>
+  </div>
+)
+}
+  {/* Detail Modal */}
 
       {showDetailModal && (
   <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 z-50">
