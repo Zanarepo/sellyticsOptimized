@@ -56,7 +56,7 @@ useEffect(() => {
 
 
 
-// Toggle dark mode
+// Toggle dark modes
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
