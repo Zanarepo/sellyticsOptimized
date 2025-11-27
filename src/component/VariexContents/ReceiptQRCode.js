@@ -8,6 +8,36 @@ import 'react-toastify/dist/ReactToastify.css';
 import { FaDownload, FaQrcode, FaEdit } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 
+
+  // Add these constants from your working module
+  const CURRENCY_STORAGE_KEY = 'preferred_currency';
+
+  const SUPPORTED_CURRENCIES = [
+    { code: 'NGN', symbol: '₦', name: 'Naira' }, 
+    { code: 'USD', symbol: '$', name: 'US Dollar' },
+    { code: 'EUR', symbol: '€', name: 'Euro' },
+    { code: 'GBP', symbol: '£', name: 'Pound Sterling' },
+  ];
+  
+  /**
+   * Helper to get currency symbol from localStorage code.
+   */
+  const getCurrencySymbolFromStorage = () => {
+      const storedCode = localStorage.getItem(CURRENCY_STORAGE_KEY);
+      const defaultCurrency = SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+  
+      if (storedCode) {
+          const foundCurrency = SUPPORTED_CURRENCIES.find(c => c.code === storedCode);
+          return foundCurrency ? foundCurrency.symbol : defaultCurrency.symbol;
+      }
+      return defaultCurrency.symbol;
+  };
+  
+
+
+
+
+
 export default function ReceiptQRCode({ singleReceipt = null }) {
   const storeId = localStorage.getItem("store_id");
   const [store, setStore] = useState(null);
@@ -34,7 +64,12 @@ export default function ReceiptQRCode({ singleReceipt = null }) {
   const printRef = useRef();
   const saleGroupsRef = useRef();
   const receiptsRef = useRef();
+  const [currencySymbol, setCurrencySymbol] = useState(getCurrencySymbolFromStorage);
 
+ 
+
+
+// ... export default function ReceiptQRCode({ singleReceipt = null }) {
   const onboardingSteps = [
     { target: '.sales-search', content: 'Search for sale groups by ID, amount, or payment method.' },
     { target: '.sort-id', content: 'Sort sale groups by ID.' },
@@ -47,6 +82,9 @@ export default function ReceiptQRCode({ singleReceipt = null }) {
     visible: { opacity: 1, y: 0 }
   };
 
+  
+
+
   // Onboarding logic
   useEffect(() => {
     if (!localStorage.getItem('receiptManagerOnboardingCompleted')) {
@@ -58,22 +96,27 @@ export default function ReceiptQRCode({ singleReceipt = null }) {
   }, []);
 
   // Fetch store details
-  useEffect(() => {
-    if (!storeId) return;
-    supabase
-      .from("stores")
-      .select("shop_name,business_address,phone_number,email_address")
-      .eq("id", storeId)
-      .single()
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('Error fetching store:', error);
-          toast.error('Failed to fetch store details.');
-        } else {
-          setStore(data);
-        }
-      });
-  }, [storeId]);
+ // Fetch store details and currency symbol
+useEffect(() => {
+  
+  setCurrencySymbol(getCurrencySymbolFromStorage());
+
+  if (!storeId) return;
+
+  supabase
+    .from("stores")
+    .select("shop_name,business_address,phone_number,email_address")
+    .eq("id", storeId)
+    .single()
+    .then(({ data, error }) => {
+      if (error) {
+        console.error('Error fetching store:', error);
+        toast.error('Failed to fetch store details.');
+      } else {
+        setStore(data);
+      }
+    });
+}, [storeId]);
 
 useEffect(() => {
   if (!storeId || singleReceipt) return;
@@ -227,7 +270,7 @@ useEffect(() => {
           r.product_name,
           String(r.sales_qty),
           r.device_id,
-          r.sales_amount != null ? `₦${r.sales_amount.toFixed(2)}` : '',
+          r.sales_amount != null ? `${currencySymbol}${r.sales_amount.toFixed(2)}` : '', // ✅ Using currencySymbol
           r.customer_name,
           r.customer_address,
           r.phone_number,
@@ -238,7 +281,7 @@ useEffect(() => {
       })
     );
     setCurrentPage(1);
-  }, [searchTerm, receipts, selectedSaleGroup]);
+  }, [searchTerm, receipts, selectedSaleGroup, currencySymbol]);
 
   // Smooth scrolling for sale groups and receipts
   useEffect(() => {
@@ -428,15 +471,16 @@ useEffect(() => {
   const paginatedReceipts = filteredReceipts.slice(startIndex, endIndex);
 
   const filteredSaleGroups = saleGroupsList.filter(sg => {
-    const term = searchTerm.toLowerCase();
-    const fields = [
-      `#${sg.id}`,
-      `₦${sg.total_amount.toFixed(2)}`,
-      sg.payment_method,
-      new Date(sg.created_at).toLocaleString().toLowerCase()
-    ];
-    return fields.some(f => f.toLowerCase().includes(term));
-  });
+        const term = searchTerm.toLowerCase();
+        const fields = [
+          `#${sg.id}`,
+          `${currencySymbol}${sg.total_amount.toFixed(2)}`,
+          sg.payment_method,
+          new Date(sg.created_at).toLocaleString().toLowerCase()
+        ];
+        return fields.some(f => f.toLowerCase().includes(term));
+      });
+
 
   const totalSaleGroupsPages = Math.ceil(filteredSaleGroups.length / saleGroupsPerPage);
   const startSaleGroupsIndex = (currentPage - 1) * saleGroupsPerPage;
@@ -522,9 +566,10 @@ useEffect(() => {
                             } even:bg-gray-50 dark:even:bg-gray-800`}
                           >
                             <td className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-700">#{sg.id}</td>
-                            <td className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-700">₦{sg.total_amount.toFixed(2)}</td>
+                            <td className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-700">{currencySymbol}{sg.total_amount.toFixed(2)}</td> 
                             <td className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-700">{sg.payment_method}</td>
                             <td className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 dark:border-gray-700">{new Date(sg.created_at).toLocaleDateString()}</td>
+                          
                           </tr>
                         ))}
                         {paginatedSaleGroups.length === 0 && (
@@ -538,38 +583,70 @@ useEffect(() => {
                     </table>
                   </div>
                   {filteredSaleGroups.length > saleGroupsPerPage && (
-                    <div className="flex items-center justify-between mt-4">
-                      <button
-                        onClick={() => handleSaleGroupsPageChange(currentPage - 1)}
-                        disabled={currentPage === 1}
-                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
-                      >
-                        Previous
-                      </button>
-                      <div className="flex gap-2">
-                        {Array.from({ length: totalSaleGroupsPages }, (_, i) => i + 1).map(page => (
-                          <button
-                            key={page}
-                            onClick={() => handleSaleGroupsPageChange(page)}
-                            className={`px-3 py-1 rounded-lg ${
-                              currentPage === page
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        onClick={() => handleSaleGroupsPageChange(currentPage + 1)}
-                        disabled={currentPage === totalSaleGroupsPages}
-                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  )}
+  <div className="flex flex-col sm:flex-row justify-between items-center mt-6 px-4 gap-4">
+    
+    {/* Showing X to Y of Z */}
+    <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+      Showing{' '}
+      {filteredSaleGroups.length === 0
+        ? '0'
+        : `${(currentPage - 1) * saleGroupsPerPage + 1} to ${Math.min(
+            currentPage * saleGroupsPerPage,
+            filteredSaleGroups.length
+          )}`}{' '}
+      of {filteredSaleGroups.length} sale groups
+    </div>
+
+    {/* Pagination Controls */}
+    <div className="flex items-center space-x-2">
+
+      {/* Previous Button */}
+      <button
+        onClick={() => handleSaleGroupsPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          currentPage === 1
+            ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+        }`}
+        aria-label="Previous page"
+      >
+        Previous
+      </button>
+
+      {/* Page Number Buttons */}
+      {Array.from({ length: totalSaleGroupsPages }, (_, i) => i + 1).map((page) => (
+        <button
+          key={page}
+          onClick={() => handleSaleGroupsPageChange(page)}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            currentPage === page
+              ? 'bg-indigo-600 text-white dark:bg-indigo-700 shadow-md'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+          }`}
+          aria-current={currentPage === page ? 'page' : undefined}
+        >
+          {page}
+        </button>
+      ))}
+
+      {/* Next Button */}
+      <button
+        onClick={() => handleSaleGroupsPageChange(currentPage + 1)}
+        disabled={currentPage === totalSaleGroupsPages}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          currentPage === totalSaleGroupsPages
+            ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+        }`}
+        aria-label="Next page"
+      >
+        Next
+      </button>
+
+    </div>
+  </div>
+)}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -735,12 +812,12 @@ useEffect(() => {
                               </td>
                               <td className="border-b px-2 sm:px-4 py-1 sm:py-2 flex sm:table-cell sm:border-b">
                                 <span className="sm:hidden font-semibold mr-2">Unit Price:</span>
-                                ₦{group.unitPrice.toFixed(2)}
+                                {currencySymbol}{group.unitPrice.toFixed(2)}
                               </td>
                               <td className="border-b px-2 sm:px-4 py-1 sm:py-2 flex sm:table-cell sm:border-b">
-                                <span className="sm:hidden font-semibold mr-2">Amount:</span>
-                                ₦{group.totalAmount.toFixed(2)}
-                              </td>
+                                  <span className="sm:hidden font-semibold mr-2">Amount:</span>
+                                  {currencySymbol}{group.totalAmount.toFixed(2)} 
+                                </td>
                             </tr>
                           </React.Fragment>
                         ))}
@@ -757,7 +834,7 @@ useEffect(() => {
                           <td className="border px-2 sm:px-4 py-1 sm:py-2 flex sm:table-cell sm:border-b"></td>
                           <td className="border px-2 sm:px-4 py-1 sm:py-2 font-bold flex sm:table-cell sm:border-b">
                             <span className="sm:hidden font-semibold mr-2">Total Amount:</span>
-                            ₦{totalAmount.toFixed(2)}
+                            {currencySymbol}{totalAmount.toFixed(2)}
                           </td>
                         </tr>
                       </tfoot>

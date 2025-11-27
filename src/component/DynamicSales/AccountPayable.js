@@ -3,6 +3,50 @@ import { supabase } from '../../supabaseClient';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+
+
+
+// --- CURRENCY LOGIC DEFINITION ---
+const CURRENCY_STORAGE_KEY = 'preferred_currency';
+
+const SUPPORTED_CURRENCIES = [
+  { code: 'NGN', symbol: '₦', name: 'Naira' }, 
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'Pound Sterling' },
+];
+
+/**
+ * Custom hook logic to manage currency state and localStorage.
+ * IMPORTANT: This component only needs to read the state, not set it.
+ */
+const useCurrencyState = () => { 
+  const getInitialCurrency = () => {
+    if (typeof window !== 'undefined') {
+      const storedCode = localStorage.getItem(CURRENCY_STORAGE_KEY);
+      const defaultCurrency = SUPPORTED_CURRENCIES.find(c => c.code === 'USD') || SUPPORTED_CURRENCIES[0];
+      
+      if (storedCode) {
+        return SUPPORTED_CURRENCIES.find(c => c.code === storedCode) || defaultCurrency;
+      }
+      return defaultCurrency;
+    }
+    return SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+  };
+
+  const [preferredCurrency, setPreferredCurrency] = useState(getInitialCurrency);
+
+  // Use useEffect to update the state from localStorage whenever the component mounts/renders
+  useEffect(() => {
+    setPreferredCurrency(getInitialCurrency());
+  }, []); // Empty dependency array ensures it runs on mount
+
+  return { preferredCurrency }; // We don't need setCurrency here
+};
+// --- END CURRENCY LOGIC ---
+
+
+
 // Fallback for Heroicons
 let MagnifyingGlassIcon, CalendarIcon, XMarkIcon;
 try {
@@ -25,6 +69,18 @@ export default function AccountsPayable() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const entriesPerPage = 10;
+
+  const { preferredCurrency } = useCurrencyState();
+
+  const formatCurrency = (value) => {
+    if (value === null || value === undefined) return `${preferredCurrency.symbol}0.00`;
+    
+    // Use the symbol and apply thousands separators via toLocaleString
+    return `${preferredCurrency.symbol}${Number(value).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })}`;
+  };
 
  const fetchApEntries = useCallback(async () => {
     setIsLoading(true);
@@ -242,12 +298,12 @@ useEffect(() => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
         <div className="bg-indigo-50 dark:bg-indigo-900 p-4 rounded-lg border border-indigo-200 dark:border-indigo-700 mb-4" aria-live="polite">
           <div className="flex flex-col sm:flex-row justify-around items-center gap-4">
-            <div className="text-lg font-semibold text-green-600 dark:text-green-400">
-              Total Money Owed: ₦{totals.totalOwed.toFixed(2)}
-            </div>
-            <div className="text-lg font-semibold text-red-600 dark:text-red-400">
-              Total Unpaid: ₦{totals.totalUnpaid.toFixed(2)}
-            </div>
+                    <div className="text-lg font-semibold text-green-600 dark:text-green-400">
+            Total Money Owed: {formatCurrency(totals.totalOwed)}
+          </div>
+          <div className="text-lg font-semibold text-red-600 dark:text-red-400">
+            Total Unpaid: {formatCurrency(totals.totalUnpaid)}
+          </div>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -267,7 +323,7 @@ useEffect(() => {
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Date</th>
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Supplier</th>
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Item</th>
-                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Amount Owed (₦)</th>
+                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Amount Owed ({preferredCurrency.symbol})</th>
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Payment Status</th>
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Actions</th>
                   </tr>
@@ -289,7 +345,7 @@ useEffect(() => {
                           {entry.dynamic_product?.name || 'Unknown'}
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-right">₦{entry.amount.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right">{formatCurrency(entry.amount)}</td>
                       <td className="px-4 py-3">{entry.status === 'Pending' ? 'Unpaid' : entry.status === 'Partial' ? 'Part Paid' : entry.status}</td>
                       <td className="px-4 py-3">
                         <select

@@ -351,37 +351,75 @@ export default function SuppliersInventory() {
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="flex flex-wrap justify-center items-center gap-2 mt-4">
-        <button
-          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-          disabled={currentPage === 1}
-          className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded disabled:opacity-50 dark:text-white"
-        >
-          Prev
-        </button>
-        {[...Array(totalPages)].map((_, i) => (
-          <button
-            key={i}
-            onClick={() => setCurrentPage(i + 1)}
-            className={`px-3 py-1 rounded ${
-              currentPage === i + 1
-                ? 'bg-indigo-600 text-white'
-                : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white'
-            }`}
-          >
-            {i + 1}
-          </button>
-        ))}
-        <button
-          onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-          disabled={currentPage === totalPages}
-          className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded disabled:opacity-50 dark:text-white"
-        >
-          Next
-        </button>
-      </div>
+   {/* Beautiful & Professional Pagination – Tailored for Inventory */}
+{filtered.length > itemsPerPage && (
+  <div className="flex flex-col sm:flex-row justify-between items-center mt-6 px-4 gap-4">
+    
+    {/* Showing X to Y of Z */}
+    <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+      Showing{' '}
+      {filtered.length === 0
+        ? '0'
+        : `${(currentPage - 1) * itemsPerPage + 1} to ${Math.min(
+            currentPage * itemsPerPage,
+            filtered.length
+          )}`}{' '}
+      of {filtered.length} items
+    </div>
 
+    {/* Pagination Controls */}
+    <div className="flex items-center space-x-2">
+
+      {/* Previous Button */}
+      <button
+        type="button"
+        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+        disabled={currentPage === 1}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm ${
+          currentPage === 1
+            ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+        }`}
+        aria-label="Previous page"
+      >
+        Previous
+      </button>
+
+      {/* Page Numbers */}
+      {[...Array(totalPages)].map((_, i) => (
+        <button
+          key={i + 1}
+          type="button"
+          onClick={() => setCurrentPage(i + 1)}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm ${
+            currentPage === i + 1
+              ? 'bg-indigo-600 text-white dark:bg-indigo-700 shadow-md'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+          }`}
+          aria-current={currentPage === i + 1 ? 'page' : undefined}
+        >
+          {i + 1}
+        </button>
+      ))}
+
+      {/* Next Button */}
+      <button
+        type="button"
+        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+        disabled={currentPage === totalPages}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm ${
+          currentPage === totalPages
+            ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+        }`}
+        aria-label="Next page"
+      >
+        Next
+      </button>
+
+    </div>
+  </div>
+)}
       {/* Exports */}
       <div className="flex justify-center gap-4 mt-4">
         <button

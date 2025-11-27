@@ -1,5 +1,7 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { CurrencyProvider } from "./component/DynamicSales/components/CurrencyContext" // Import the provider
+
 import HomePage from "./component/HomePage";
 import LandingFooterLayout from "./component/LandingFooterLayout";
 import Navbar from "./component/Navbar";
@@ -34,64 +36,83 @@ import ReceiptQRCodeWrapper from "./component/VariexContents/ReceiptQRCodeWrappe
 import ReceiptModules from "./component/Services/ReceiptModules";
 import PricingFeatures from "./component/Payments/PricingFeatures";
 import ShareholderModule from "./component/Shareholders";
-
+import SalesTrackers from "./component/Sales/SalesTrackers"
+import DebtsManager from "./component/Debts/DebtsManager";
+import UnpaidManager from "./component/Unpaid/UnpaidManager";
+import ExpenseManager from "./component/Expenses/ExpenseManager";
+import StockTransfer from "./component/StockTransfer/StockTransfer";
+import InventoryTable from './component/Inventory/components/InventoryTable'
+//import SalesTrackers from './component/DynamicSales/components/SalesTrackers'
 
 const App = () => {
   return (
-    <Router>
-      <div className="flex flex-col min-h-screen">
-        {/* All public routes with Navbar and Landing Footer */}
-        <Routes>
-          <Route
-            element={
-              <>
-                <Navbar />
-                <LandingFooterLayout />
-              </>
-            }
-          >
-            <Route path="/" element={<HomePage />} />
-            
-            <Route path="/forgot-password" element={<Forgotpassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/team-signup" element={<TeamSignup />} />
-            <Route path="/push-notifications" element={<PushNotifications />} />
-            <Route path="/signaturepad" element={<SignaturePad />} />
-            <Route path="/login" element={<Login />} />
-            
-          </Route>
-        </Routes>
+    <CurrencyProvider> {/* Currency context wrapped here */}
+      <Router>
+        <div className="flex flex-col min-h-screen">
+          {/* All public routes with Navbar and Landing Footer */}
+          <Routes>
+            <Route
+              element={
+                <>
+                  <Navbar />
+                  <LandingFooterLayout />
+                </>
+              }
+            >
+              <Route path="/" element={<HomePage />} />
+              
+              <Route path="/forgot-password" element={<Forgotpassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/team-signup" element={<TeamSignup />} />
+              <Route path="/push-notifications" element={<PushNotifications />} />
+              <Route path="/signaturepad" element={<SignaturePad />} />
+              <Route path="/login" element={<Login />} />
+            </Route>
+          </Routes>
 
-        {/* Routes without Navbar or Footer */}
-        <Routes>
-          <Route path="/register" element={<Registration />} />
-    
-          <Route path="/adminregister" element={<AdminRegistration />} />
-          <Route path="/admin" element={<Admins />} />
-          <Route path="/regdashboard" element={<RegisteredDashboards />} />
-          <Route path="/dashboard" element={<UserHomepage />} />
-          <Route path="/admin-dashboard" element={<AdminHome />} />
-          <Route path="/team-dashboard" element={<StoreUsersHome />} />
-          <Route path="/sales-metrics" element={<SalesMetrics />} />
-          <Route path="/product-cost" element={<PoductPurchaseCost />} />
-          <Route path="/main" element={<MainDashboard />} />
-          <Route path="/salestrack" element={<SalesTracker />} />
-          <Route path="/owner-dashboard" element={<StoresAdmin />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/payment" element={<SellyticsPayment />} />
-          <Route path="/premiumdashboard" element={<PremiumHomepage />} />
-          <Route path="/tools" element={<Tools />} />
+          {/* Routes without Navbar or Footer */}
+          <Routes>
+            <Route path="/register" element={<Registration />} />
+      
+            <Route path="/adminregister" element={<AdminRegistration />} />
+            <Route path="/admin" element={<Admins />} />
+            <Route path="/regdashboard" element={<RegisteredDashboards />} />
+            <Route path="/dashboard" element={<UserHomepage />} />
+            <Route path="/admin-dashboard" element={<AdminHome />} />
+            <Route path="/team-dashboard" element={<StoreUsersHome />} />
+            <Route path="/sales-metrics" element={<SalesMetrics />} />
+            <Route path="/product-cost" element={<PoductPurchaseCost />} />
+            <Route path="/main" element={<MainDashboard />} />
+            <Route path="/salestrack" element={<SalesTracker />} />
+            <Route path="/owner-dashboard" element={<StoresAdmin />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/payment" element={<SellyticsPayment />} />
+            <Route path="/premiumdashboard" element={<PremiumHomepage />} />
+            <Route path="/tools" element={<Tools />} />
             <Route path="/test" element={<Test />} />
-             <Route path="/tests" element={<Tests />} />
-             <Route path="/rec" element={<ReceiptModules />} />
-          <Route path="/qrcodes" element={<ReceiptQRCode />} />
-        <Route path="/receipt/:receiptId" element={<ReceiptQRCodeWrapper />} />
-        <Route path="/upgrade" element={<PricingFeatures/>} />
-        <Route path="/shareholders" element={<ShareholderModule/>} />
-        
-        </Routes>
-      </div>
-    </Router>
+            <Route path="/tests" element={<Tests />} />
+            <Route path="/rec" element={<ReceiptModules />} />
+            <Route path="/qrcodes" element={<ReceiptQRCode />} />
+            <Route path="/receipt/:receiptId" element={<ReceiptQRCodeWrapper />} />
+            <Route path="/upgrade" element={<PricingFeatures/>} />
+            <Route path="/shareholders" element={<ShareholderModule/>} />
+            <Route path="/tracker" element={<SalesTrackers/>} />
+            <Route path="/debt" element={<DebtsManager/>} />
+            <Route path="/unpaid" element={<UnpaidManager/>} />
+            <Route path="/expense" element={<ExpenseManager/>}/>
+            <Route path="/stock" element={<StockTransfer/>}/>
+            <Route path="/inventory" element={<InventoryTable/>}/>
+            
+            
+            
+            
+          
+            
+            
+          </Routes>
+        </div>
+      </Router>
+    </CurrencyProvider>
   );
 };
 

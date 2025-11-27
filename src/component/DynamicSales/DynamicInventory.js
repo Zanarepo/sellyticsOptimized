@@ -25,7 +25,8 @@ export default function InventoryManager() {
   const pageSize = 5;
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
-
+  const itemsPerPage = 10; // or whatever you're using
+ 
   // Onboarding steps
   const onboardingSteps = [
     {
@@ -439,29 +440,61 @@ useEffect(() => {
         </table>
       </div>
 
-      {/* Pagination */}
-      {filteredInv.length > 0 && (
-        <div className="flex justify-between items-center">
-          <button
-            onClick={() => setPage(p => Math.max(p - 1, 0))}
-            disabled={page === 0}
-            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50 dark:bg-gray-600 dark:hover:bg-gray-500"
-          >
-            Prev
-          </button>
-          <span className="px-3 py-1 bg-gray-200 rounded dark:bg-gray-600">
-            Page {page + 1} of {totalPages}
-          </span>
-          <button
-            onClick={() => setPage(p => Math.min(p + 1, totalPages - 1))}
-            disabled={page + 1 >= totalPages}
-            className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50 dark:bg-gray-600 dark:hover:bg-gray-500"
-          >
-            Next
-          </button>
-        </div>
-      )}
+     {/* Beautiful & Professional Pagination – Tailored for Your Inventory */}
+{filteredInv.length > 0 && (
+  <div className="flex flex-col sm:flex-row justify-between items-center mt-6 px-4 gap-4">
+    
+    {/* Showing X to Y of Z */}
+    <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+      Showing{' '}
+      {filteredInv.length === 0
+        ? '0'
+        : `${page * itemsPerPage + 1} to ${Math.min(
+            (page + 1) * itemsPerPage,
+            filteredInv.length
+          )}`}{' '}
+      of {filteredInv.length} items
+    </div>
 
+    {/* Pagination Controls */}
+    <div className="flex items-center space-x-2">
+
+      {/* Previous Button */}
+      <button
+        onClick={() => setPage(p => Math.max(p - 1, 0))}
+        disabled={page === 0}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          page === 0
+            ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+        }`}
+        aria-label="Previous page"
+      >
+        Previous
+      </button>
+
+      {/* Page Info (e.g. Page 2 of 8) */}
+      <div className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-lg">
+        Page {page + 1} of {totalPages}
+      </div>
+
+      {/* Next Button */}
+      <button
+        onClick={() => setPage(p => Math.min(p + 1, totalPages - 1))}
+        disabled={page + 1 >= totalPages}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          page + 1 >= totalPages
+            ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+        }`}
+        aria-label="Next page"
+      >
+        Next
+      </button>
+
+    </div>
+  </div>
+)}
      
 
       {/* Onboarding Tooltip */}

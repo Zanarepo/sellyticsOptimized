@@ -1,0 +1,443 @@
+| Feature Needed                              | Does current schema support? | Fix                            |
+| ------------------------------------------- | ---------------------------- | ------------------------------ |
+| Multi-store                                 | ✔                            | Good                           |
+| Role-based inventory update                 | ❌                            | Add `store_staff` + roles      |
+| Inventory automation from preferences       | ❌                            | Add `inventory_preferences`    |
+| Detail modal insights                       | ❌                            | Add `product_sales_analytics`  |
+| Increase qty w/ owner & manager restriction | ❌                            | Add role table + trigger check |
+| Stock transfer                              | ❌                            | Add `stock_transfers`          |
+| Audit logs                                  | ✔                            | Already have triggers          |
+| Safety stock                                | ✔                            | Good                           |
+| AI forecasting                              | ❌                            | Add analytics table            |
+
+role_id SERIAL PRIMARY KEY,
+role_name TEXT UNIQUE NOT NULL
+
+store_staff
+id SERIAL PRIMARY KEY,
+user_id INT REFERENCES auth.users(id) ON DELETE CASCADE,
+store_id INT REFERENCES stores(id) ON DELETE CASCADE,
+role_id INT REFERENCES roles(role_id),
+can_edit_inventory BOOLEAN DEFAULT false,
+can_view_sales BOOLEAN DEFAULT true
+
+inventory_preferences
+id SERIAL PRIMARY KEY,
+store_id INT REFERENCES stores(id),
+product_id INT REFERENCES dynamic_product(id),
+preferred_reorder_point INT,
+preferred_safety_stock INT,
+auto_restock BOOLEAN DEFAULT false,
+max_stock_level INT,
+created_at TIMESTAMP DEFAULT now()
+
+Needed for:
+
+Auto compute reorder levels
+
+AI optimization later
+
+Personalization for each customer/store
+
+inventory_adjustments
+id SERIAL PRIMARY KEY,
+inventory_id INT REFERENCES dynamic_inventory(id) ON DELETE CASCADE,
+old_qty INT,
+new_qty INT,
+difference INT,
+reason TEXT, -- manual update / restock / correction
+updated_by INT REFERENCES auth.users(id),
+created_at TIMESTAMP DEFAULT now()
+
+
+Track who changed what
+
+Detect suspicious activity
+
+Manager/owner restrictions
+
+Show in insights modal
+
+
+
+product_sales_analytics
+id SERIAL PRIMARY KEY,
+product_id INT REFERENCES dynamic_product(id),
+store_id INT REFERENCES stores(id),
+total_sold INT,
+total_revenue NUMERIC(12,2),
+avg_daily_sales INT,
+best_selling_hours JSONB,
+last_30_days JSONB,
+updated_at TIMESTAMP DEFAULT now()
+
+Product detail modal
+
+Sales insights per product
+
+Trend analysis
+
+
+reorder_level = (avg_daily_sales × lead_time) + safety_stock
+
+max_stock = reorder_level × 2
+
+-------------------------------------
+A. Auto-calculate reorder levels
+
+Use preferences + sales velocity:
+
+reorder_level = (avg_daily_sales × lead_time) + safety_stock
+
+max_stock = reorder_level × 2
+
+B. Block updates from unauthorized roles
+
+If user ≠ owner or manager → abort.
+
+C. Update analytics table when sales occur
+D. Log adjustment into inventory_adjustments
+
+
+
+
+create or replace function enforce_inventory_permission()
+returns trigger
+language plpgsql
+as $$
+declare
+  current_role varchar(50);
+begin
+  select role into current_role
+  from store_users
+  where id = NEW.store_owner_id;
+
+  if current_role not in ('owner','manager') then
+      raise exception 'You do not have permission to modify inventory.';
+  end if;
+
+  return NEW;
+end;
+$$;
+
+
+
+create trigger trg_inventory_permission
+before update on dynamic_inventory
+for each row
+execute function enforce_inventory_permission();
+Only owners/managers can increase quantity
+✔ Cashiers/staff will be rejected instantly
+✔ No need for a separate roles table
+
+
+
+/modules
+   /inventory
+      - useInventory.js
+      - useDynamicProducts.js
+      - useInventorySync.js
+      - inventoryPreferences.js
+      - inventoryPermissions.js
+      - useInventorySearch.js
+      - useLowStock.js
+      - usePagination.js
+
+   /products
+      - useProductInsights.js
+
+/components
+   /inventory
+      - InventoryTable.jsx
+      - LowStockTable.jsx
+      - InventoryControls.jsx
+      - InventoryDetailModal.jsx
+      - ProductInsightsModal.jsx
+      - OnboardingTooltip.jsx
+
+/utils
+      - supabaseQueries.js
+      - permissions.js
+      - formatters.js
+
+
+Below is a **clean, structured blueprint** of all the **sub-modules** you need to fully modularize your Inventory Manager, **why each module exists**, and **what additional improvements/features** you should add (including inventory level preferences, restricted quantity adjustments, and product insights modal).
+
+---
+
+# ✅ **Recommended Sub-Modules (Well-Structured Architecture)**
+
+Here’s the ideal folder structure and what each module should contain:
+
+```
+/modules
+   /inventory
+      - useInventory.js
+      - useDynamicProducts.js
+      - useInventorySync.js
+      - inventoryPreferences.js
+      - inventoryPermissions.js
+      - useInventorySearch.js
+      - useLowStock.js
+      - usePagination.js
+
+   /products
+      - useProductInsights.js
+
+/components
+   /inventory
+      - InventoryTable.jsx
+      - LowStockTable.jsx
+      - InventoryControls.jsx
+      - InventoryDetailModal.jsx
+      - ProductInsightsModal.jsx
+      - OnboardingTooltip.jsx
+
+/utils
+      - supabaseQueries.js
+      - permissions.js
+      - formatters.js
+```
+
+---
+
+# 📌 **1. `useInventory.js` — Core Inventory Fetching & CRUD**
+
+**Purpose:**
+Centralize all inventory-related logic.
+
+**Includes:**
+✔ Fetch inventory
+✔ Update inventory qty
+✔ Delete inventory entry
+✔ Insert new inventory row
+✔ Restrict increasing qty based on role
+✔ Handle seeding logic
+
+**Why:**
+Keeps the component clean → UI focuses **only** on rendering.
+
+---
+
+# 📌 **2. `useDynamicProducts.js` — Product Fetcher**
+
+**Purpose:** Load dynamic products and keep them synced.
+
+**Includes:**
+✔ Fetch dynamic products
+✔ Hydrate data when product is added
+✔ Expose product filters
+
+---
+
+# 📌 **3. `useInventorySync.js` — Real-time Supabase Listener**
+
+**Purpose:**
+Separate all the `.on('postgres_changes')` noise into a custom hook.
+
+**Includes:**
+✔ Subscribe to INSERT/UPDATE product
+✔ Upsert into dynamic_inventory
+✔ Refresh products + inventory
+✔ Add to history list
+
+**Why:**
+Real-time logic should **never** sit in the main UI file.
+
+---
+
+# 📌 **4. `inventoryPreferences.js` — Customer Inventory Level Config**
+
+**Purpose:** user-defined inventory behavior.
+
+**Examples:**
+✔ Custom low stock threshold
+✔ Auto-restocking rules
+✔ Notification preference
+✔ Item grouping preference
+
+**Why:**
+Business logic isolated → easier to persist to DB or localStorage.
+
+---
+
+# 📌 **5. `inventoryPermissions.js` — Role-based Logic**
+
+**Purpose:**
+Restrict sensitive actions.
+
+**Capabilities:**
+✔ Only **Owner** or **Manager** can:
+
+* Increase qty
+* Update inventory
+* Delete inventory
+
+✔ Salesperson → **read-only**
+
+**Why:**
+You MUST isolate permissions so they don’t leak into UI.
+
+---
+
+# 📌 **6. `useLowStock.js` — Low Stock Filtering**
+
+**Purpose:**
+Handles:
+✔ sorting
+✔ threshold
+✔ filtering
+✔ counts
+
+**Why:**
+Your component currently mixes UI + low stock calculations → bad pattern.
+
+---
+
+# 📌 **7. `useInventorySearch.js` — Searching**
+
+**Purpose:**
+Isolate search/filtering logic.
+
+---
+
+# 📌 **8. `usePagination.js` — Reusable Pagination**
+
+**Purpose:**
+Standard reusable pagination logic.
+
+---
+
+# 📌 **9. `ProductInsightsModal.jsx` + `useProductInsights.js`**
+
+**Purpose:**
+Give detailed analytics when user clicks a product.
+
+**Includes:**
+✔ Sales trends (bar chart / daily summary)
+✔ Profitability
+✔ Frequency of restocking
+✔ Avg stock-life
+✔ Days until stock-out forecast
+✔ Top customers (if applicable)
+
+**Why:**
+Your system becomes *data-driven* rather than just CRUD.
+
+---
+
+# 📌 **10. `InventoryDetailModal.jsx` — Inventory Item Overview**
+
+**Shows:**
+✔ Item name
+✔ Available qty
+✔ Markup %
+✔ Purchase vs selling price
+✔ Supplier info
+✔ Last updated
+✔ History of changes
+✔ Buttons: restock / adjust qty (permission-based)
+
+---
+
+# 📌 **11. `OnboardingTooltip.jsx`**
+
+Moves all onboarding steps outside of the main component.
+
+---
+
+# 📌 **12. `supabaseQueries.js` — All DB Operations in One Place**
+
+**Example functions:**
+
+* `getInventory(storeId)`
+* `getProducts(storeId)`
+* `updateInventoryQty()`
+* `insertDynamicInventory()`
+
+**Why:**
+You avoid repeating the same Supabase queries across modules.
+
+---
+
+# 📌 **13. `formatters.js`**
+
+Formatting utilities like:
+✔ currency
+✔ date
+✔ product label
+
+---
+
+# 🚀 **Additional Improvements You Should Add**
+
+### **1. Inventory Activity History Tracking (full audit log)**
+
+Track:
+✔ who added stock
+✔ who adjusted qty
+✔ timestamps
+✔ reason for adjustment
+✔ previous and new qty
+
+Super important for accountability.
+
+---
+
+### **2. Restock Alerts & Push Notifications**
+
+When below threshold:
+
+* show toast
+* send email
+* push to mobile (future)
+* badge count in sidebar
+
+---
+
+### **3. Bulk Actions**
+
+✔ bulk delete
+✔ bulk qty update
+✔ bulk export to CSV
+
+---
+
+### **4. CSV Upload/Import**
+
+Allow owners to upload stock in bulk.
+
+---
+
+### **5. Inventory Analytics Dashboard**
+
+Metrics:
+✔ Total stock value
+✔ Most sold items
+✔ Fastest moving item
+✔ Slowest moving item
+✔ Stock out predictions
+
+---
+
+# 🎯 Summary: What You Achieve With These Modules
+
+| Goal                               | Achieved Through        |
+| ---------------------------------- | ----------------------- |
+| Clean code & best practices        | Modularization + hooks  |
+| Owner/Manager-only qty increase    | permissions.js          |
+| Custom inventory level preferences | inventoryPreferences.js |
+| Product insights modal             | useProductInsights.js   |
+| Real-time syncing                  | useInventorySync        |
+| Low stock filter                   | useLowStock             |
+| Smooth onboarding                  | OnboardingTooltip       |
+
+---
+
+If you want, I can also:
+
+✅ Generate **all the folder & file templates**
+✅ Provide **full code for each module**
+✅ Refactor your existing component into this new architecture
+
+Just tell me **“generate the full code structure”** or **“refactor my component using these modules”**.

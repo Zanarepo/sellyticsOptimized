@@ -1,6 +1,6 @@
 
 // SalesDashboard.jsx
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "../../supabaseClient";
 import jsPDF from "jspdf";
 import { format, startOfWeek, startOfMonth } from "date-fns";
@@ -14,17 +14,57 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// Constants
-const CURRENCY_SYMBOLS = ["$", "€", "£", "¥", "₦"];
+
+
+
+
+const CURRENCY_STORAGE_KEY = 'preferred_currency';
+
+const SUPPORTED_CURRENCIES = [
+  { code: 'NGN', symbol: '₦', name: 'Naira' }, 
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'Pound Sterling' },
+];
+
+const useCurrencyState = () => {
+  const getInitialCurrency = () => {
+    if (typeof window !== 'undefined') {
+      const storedCode = localStorage.getItem(CURRENCY_STORAGE_KEY);
+      const defaultCurrency = SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+      if (storedCode) {
+        return SUPPORTED_CURRENCIES.find(c => c.code === storedCode) || defaultCurrency;
+      }
+      return defaultCurrency;
+    }
+    return SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+  };
+
+  const [preferredCurrency, setPreferredCurrency] = useState(getInitialCurrency);
+
+  const setCurrency = useCallback((currencyCode) => {
+    const newCurrency = SUPPORTED_CURRENCIES.find(c => c.code === currencyCode);
+    if (newCurrency) {
+      setPreferredCurrency(newCurrency);
+      localStorage.setItem(CURRENCY_STORAGE_KEY, newCurrency.code);
+    }
+  }, []);
+
+  useEffect(() => {
+    setPreferredCurrency(getInitialCurrency());
+  }, []);
+
+  return { preferredCurrency, setCurrency, SUPPORTED_CURRENCIES };
+};
+// --- End Curr
+
+
 const ITEMS_PER_PAGE = 50;
+
 const DATE_FORMAT = "yyyy-MM-dd";
 
 // Utility Functions
-const formatCurrency = (value, currency) =>
-  `${currency}${value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+
 
 const formatDate = (date) => (date ? format(new Date(date), DATE_FORMAT) : "—");
 
@@ -36,10 +76,33 @@ export default function SalesDashboard() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [currency, setCurrency] = useState("₦");
+  const { preferredCurrency } = useCurrencyState(); 
   const [currentPage, setCurrentPage] = useState(1);
   const [showChart, setShowChart] = useState(false);
+ 
+ 
+  const formatCurrency = useCallback((value) => {
+    const num = Number(value);
+    const abs = Math.abs(num);
+  
+    if (abs >= 1_000_000) {
+      const suffixes = ["", "K", "M", "B", "T"];
+      const tier = Math.log10(abs) / 3 | 0;
+      const suffix = suffixes[tier];
+      const scale = Math.pow(1000, tier);
+      const scaled = num / scale;
+  
+      return `${preferredCurrency.symbol}${scaled.toFixed(1)}${suffix}`;
+    }
+    // Below 1 million → full format with commas
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: preferredCurrency.code,
+      minimumFractionDigits: 2,
+    }).format(num);
+  }, [preferredCurrency]);
 
+  
   // Load sales data on mount
   useEffect(() => {
     const storeId = localStorage.getItem("store_id");
@@ -134,7 +197,7 @@ export default function SalesDashboard() {
     const rows = summary.map((item) => [
       item.productName,
       item.totalQty,
-      formatCurrency(item.totalRevenue, currency),
+      formatCurrency(item.totalRevenue, formatCurrency),
     ]);
     const csv = [header, ...rows].map((row) => row.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -157,7 +220,7 @@ export default function SalesDashboard() {
       doc.text(
         `${item.productName} | Qty: ${item.totalQty} | Revenue: ${formatCurrency(
           item.totalRevenue,
-          currency
+          formatCurrency
         )}`,
         14,
         y
@@ -248,10 +311,10 @@ export default function SalesDashboard() {
 
       {/* Total Revenue */}
       <div className="text-right font-semibold mb-4 dark:bg-gray-900 dark:text-white">
-        Total Revenue: {formatCurrency(totalRevenue, currency)}
+        Total Revenue: {formatCurrency(totalRevenue, formatCurrency)}
       </div>
 
-      {/* Search and Currency Selector */}
+      {/* Search and formatCurrency Selector */}
       <div className="flex flex-col sm:flex-row justify-between gap-4 mb-4 dark:bg-gray-900 dark:text-white">
         <input
           type="text"
@@ -260,17 +323,7 @@ export default function SalesDashboard() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full sm:flex-1 p-2 border rounded dark:bg-gray-900 dark:text-white"
         />
-        <select
-          value={currency}
-          onChange={(e) => setCurrency(e.target.value)}
-          className="p-2 border rounded dark:bg-gray-900 dark:text-white"
-        >
-          {CURRENCY_SYMBOLS.map((symbol) => (
-            <option key={symbol} value={symbol}>
-              {symbol}
-            </option>
-          ))}
-        </select>
+      
       </div>
 
       {/* Summary Table */}
@@ -295,7 +348,7 @@ export default function SalesDashboard() {
                   <td className="px-4 py-2 text-sm">{item.productName}</td>
                   <td className="px-4 py-2 text-sm">{item.totalQty}</td>
                   <td className="px-4 py-2 text-sm">
-                    {formatCurrency(item.totalRevenue, currency)}
+                    {formatCurrency(item.totalRevenue, formatCurrency)}
                   </td>
                 </tr>
               ))
@@ -382,26 +435,26 @@ export default function SalesDashboard() {
                 <YAxis
                   tick={{ fontSize: 12 }}
                   tickFormatter={(value, index) =>
-                    index % 2 === 0 ? formatCurrency(value, currency) : value
+                    index % 2 === 0 ? formatCurrency(value, formatCurrency) : value
                   }
                   domain={["auto", "auto"]}
                 />
                 <Tooltip
                   formatter={(value, name) =>
                     name.includes("Total Revenue")
-                      ? [formatCurrency(value, currency), `Total Revenue (${currency})`]
+                      ? [formatCurrency(value, formatCurrency), `Total Revenue (${formatCurrency})`]
                       : [value, name]
                   }
                 />
                 <Legend
                   formatter={(name) =>
-                    name.includes("Total Revenue") ? `Total Revenue (${currency})` : name
+                    name.includes("Total Revenue") ? `Total Revenue (${formatCurrency})` : name
                   }
                 />
                 <Bar dataKey="totalQty" name="Qty Sold" fill="#10B981" />
                 <Bar
                   dataKey="totalRevenue"
-                  name={`Total Revenue (${currency})`}
+                  name={`Total Revenue (${formatCurrency})`}
                   fill="#6366F1"
                 />
               </BarChart>

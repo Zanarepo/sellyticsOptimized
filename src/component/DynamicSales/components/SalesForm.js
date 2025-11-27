@@ -1,6 +1,53 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import CustomerSelector from '../CustomerSelector';
 import { FaTrashAlt, FaCamera } from 'react-icons/fa';
+
+const CURRENCY_STORAGE_KEY = 'preferred_currency';
+
+// --- CURRENCY LOGIC DEFINITION (Embedded) ---
+const SUPPORTED_CURRENCIES = [
+  { code: 'NGN', symbol: '₦', name: 'Naira' }, 
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'Pound Sterling' },
+];
+
+/**
+ * Symbol-independent Number Formatter
+ */
+const formatPriceNumber = (value) =>
+  Number(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+/**
+ * Custom hook logic to manage currency state and localStorage.
+ */
+const useCurrencyState = () => {
+  const getInitialCurrency = () => {
+    if (typeof window !== 'undefined') {
+      const storedCode = localStorage.getItem(CURRENCY_STORAGE_KEY);
+      const defaultCurrency = SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+      
+      if (storedCode) {
+        return SUPPORTED_CURRENCIES.find(c => c.code === storedCode) || defaultCurrency;
+      }
+      return defaultCurrency;
+    }
+    return SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+  };
+
+  const [preferredCurrency, setPreferredCurrency] = useState(getInitialCurrency);
+
+  // Re-fetch currency on component mount to ensure sync with localStorage
+  useEffect(() => {
+    setPreferredCurrency(getInitialCurrency());
+  }, []);
+
+  return { preferredCurrency };
+};
+// --- END CURRENCY LOGIC ---
 
 
 export default function SalesForm({
@@ -26,9 +73,11 @@ export default function SalesForm({
   handleEditChange,
   addEditDeviceId,
   removeEditDeviceId,
-  emailReceipt,        // from parent
-  setEmailReceipt,     // from parent
+  emailReceipt,
+  setEmailReceipt,
 }) {
+  const { preferredCurrency } = useCurrencyState(); // Hook to get current currency
+
   const handleSubmit = (e) => {
     e.preventDefault();
     onSubmit({
@@ -48,22 +97,26 @@ export default function SalesForm({
         {type === 'add' ? 'Add Sale' : 'Edit Sale'}
       </h2>
 
-      {/* ====== ADD MODE ====== */}
+      {/* ====== ADD MODE - ITEMS ONLY ====== */}
       {type === 'add' && (lines || []).map((line, lineIdx) => (
         <div key={lineIdx} className="border border-gray-200 dark:border-gray-700 p-4 rounded-lg space-y-3 dark:bg-gray-800">
           <div className="flex justify-between items-center">
             <h3 className="font-semibold">Item {lineIdx + 1}</h3>
             {lines.length > 1 && (
               <button type="button" onClick={() => removeLine(lineIdx)} className="p-2 bg-red-600 text-white rounded-full">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             )}
           </div>
 
+          {/* Product, Quantity, Unit Price */}
           {[
             { name: 'dynamic_product_id', label: 'Product', type: 'select' },
             { name: 'quantity', label: 'Quantity', type: 'number', min: 1 },
-            { name: 'unit_price', label: 'Unit Price', type: 'number', step: '0.01' },
+            // Note: The currency symbol is NOT added here, as it's an input field
+            { name: 'unit_price', label: 'Unit Price', type: 'number', step: '0.01' }, 
           ].map(f => (
             <label key={f.name} className="block">
               <span className="font-semibold text-sm">{f.label}</span>
@@ -75,7 +128,9 @@ export default function SalesForm({
                   required
                 >
                   <option value="">Select...</option>
-                  {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {products.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
                 </select>
               ) : (
                 <input
@@ -91,7 +146,7 @@ export default function SalesForm({
             </label>
           ))}
 
-          {/* Device IDs */}
+          {/* Device IDs & Sizes */}
           <label className="block">
             <span className="font-semibold text-sm">Product IDs & Sizes (Optional)</span>
             {(line.deviceIds || ['']).map((id, i) => (
@@ -100,14 +155,22 @@ export default function SalesForm({
                   <input
                     type="text"
                     value={id}
-                    onChange={e => handleLineChange(lineIdx, 'deviceIds', e.target.value, i)}
-                    placeholder="Enter ID"
+                    onChange={e => handleLineChange(lineIdx, 'deviceIds', e.target.value, i, false)}
+                    onBlur={() => handleLineChange(lineIdx, 'deviceIds', id, i, true)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === 'Tab') {
+                        e.preventDefault();
+                        handleLineChange(lineIdx, 'deviceIds', e.target.value.trim(), i, true);
+                      }
+                    }}
+                    placeholder="Scan or type IMEI/Barcode"
                     className="flex-1 p-2 border rounded"
+                    autoFocus={i === (line.deviceIds || []).length - 1}
                   />
-                  <button type="button" onClick={() => openScanner('add', lineIdx, i)} className="p-2 bg-indigo-600 text-white rounded">
+                  <button type="button" onClick={() => openScanner('add', lineIdx, i)} className="p-2 bg-white text-indigo-600 rounded hover:bg-indigo-100">
                     <FaCamera />
                   </button>
-                  <button type="button" onClick={() => removeDeviceId(lineIdx, i)} className="p-2 bg-red-600 text-white rounded">
+                  <button type="button" onClick={() => removeDeviceId(lineIdx, i)} className="p-2 bg-white text-red-600 rounded hover:bg-red-100">
                     <FaTrashAlt />
                   </button>
                 </div>
@@ -124,10 +187,20 @@ export default function SalesForm({
               + Add ID & Size
             </button>
           </label>
+        </div>
+      ))}
 
+      {/* ====== PAYMENT METHOD & CUSTOMER - ONLY ONCE (ADD MODE) ====== */}
+      {type === 'add' && (
+        <>
           <label className="block">
             <span className="font-semibold text-sm">Payment Method</span>
-            <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full p-2 border rounded mt-1" required>
+            <select
+              value={paymentMethod}
+              onChange={e => setPaymentMethod(e.target.value)}
+              className="w-full p-2 border rounded mt-1"
+              required
+            >
               <option value="">Select...</option>
               <option>Cash</option>
               <option>Bank Transfer</option>
@@ -136,10 +209,13 @@ export default function SalesForm({
             </select>
           </label>
 
-          <CustomerSelector storeId={storeId} selectedCustomerId={selectedCustomerId} onCustomerChange={setSelectedCustomerId} />
-       
-        </div>
-      ))}
+          <CustomerSelector
+            storeId={storeId}
+            selectedCustomerId={selectedCustomerId}
+            onCustomerChange={setSelectedCustomerId}
+          />
+        </>
+      )}
 
       {/* ====== EDIT MODE ====== */}
       {type === 'edit' && (
@@ -147,6 +223,7 @@ export default function SalesForm({
           {[
             { name: 'dynamic_product_id', label: 'Product', type: 'select' },
             { name: 'quantity', label: 'Quantity', type: 'number', min: 1 },
+            // Note: The currency symbol is NOT added here, as it's an input field
             { name: 'unit_price', label: 'Unit Price', type: 'number', step: '0.01' },
             { name: 'payment_method', label: 'Payment Method', type: 'select' },
           ].map(f => (
@@ -161,7 +238,9 @@ export default function SalesForm({
                   {f.name === 'dynamic_product_id' ? (
                     <>
                       <option value="">Select...</option>
-                      {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
                     </>
                   ) : (
                     <>
@@ -186,7 +265,11 @@ export default function SalesForm({
             </label>
           ))}
 
-          <CustomerSelector storeId={storeId} selectedCustomerId={saleForm.customer_id} onCustomerChange={v => handleEditChange('customer_id', v)} />
+          <CustomerSelector
+            storeId={storeId}
+            selectedCustomerId={saleForm.customer_id}
+            onCustomerChange={v => handleEditChange('customer_id', v)}
+          />
 
           {/* Device IDs in Edit */}
           <label className="block">
@@ -201,10 +284,10 @@ export default function SalesForm({
                     placeholder="Enter ID"
                     className="flex-1 p-2 border rounded"
                   />
-                  <button type="button" onClick={() => openScanner('edit', 0, i)} className="p-2 bg-indigo-600 text-white rounded">
+                  <button type="button" onClick={() => openScanner('edit', 0, i)} className="p-2 text-indigo-600 hover:bg-indigo-100">
                     <FaCamera />
                   </button>
-                  <button type="button" onClick={() => removeEditDeviceId(i)} className="p-2 bg-red-600 text-white rounded">
+                  <button type="button" onClick={() => removeEditDeviceId(i)} className="p-2 text-red-600 rounded-lg hover:bg-red-100">
                     <FaTrashAlt />
                   </button>
                 </div>
@@ -238,12 +321,22 @@ export default function SalesForm({
       {/* ====== FOOTER ====== */}
       <div className="flex flex-col sm:flex-row justify-between items-center mt-6 gap-3">
         {type === 'add' && (
-          <div className="font-semibold">Total: ₦{Number(totalAmount).toFixed(2)}</div>
+          // --- DYNAMIC CURRENCY AND FORMATTING APPLIED HERE ---
+          <div className="font-semibold">
+            Total: {preferredCurrency.symbol}{formatPriceNumber(totalAmount)}
+          </div>
         )}
         {type === 'add' && (
           <button
             type="button"
-            onClick={() => setLines(ls => [...ls, { dynamic_product_id: '', quantity: 1, unit_price: '', deviceIds: [''], deviceSizes: [''] }])}
+            onClick={() => setLines(ls => [...ls, {
+              dynamic_product_id: '',
+              quantity: 1,
+              unit_price: '',
+              deviceIds: [''],
+              deviceSizes: [''],
+              isQuantityManual: false
+            }])}
             className="px-4 py-2 bg-green-600 text-white rounded-full text-sm"
           >
             Add Item
@@ -251,10 +344,14 @@ export default function SalesForm({
         )}
         <div className="flex gap-2">
           <button type="button" onClick={onCancel} className="p-2.5 bg-gray-500 text-white rounded-full">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
           <button type="submit" className="p-2.5 bg-indigo-600 text-white rounded-full">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+            </svg>
           </button>
         </div>
       </div>

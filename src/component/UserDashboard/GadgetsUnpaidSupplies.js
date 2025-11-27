@@ -4,6 +4,7 @@ import { FaEdit, FaTrashAlt, FaPlus, FaBell, FaCamera } from 'react-icons/fa';
 import { Html5Qrcode, Html5QrcodeSupportedFormats, Html5QrcodeScannerState } from 'html5-qrcode';
 import DeviceDebtRepayment from './DeviceDebtRepayment';
 
+
 export default function DebtsManager() {
   const storeId = localStorage.getItem("store_id");
   const [, setStore] = useState(null);

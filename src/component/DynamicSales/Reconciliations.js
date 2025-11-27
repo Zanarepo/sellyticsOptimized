@@ -7,7 +7,43 @@ import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Lege
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import 'tailwindcss/tailwind.css';
 
-// Register Chart.js components
+
+
+
+// --- CURRENCY LOGIC ---
+const CURRENCY_STORAGE_KEY = 'preferred_currency';
+
+const SUPPORTED_CURRENCIES = [
+  { code: 'NGN', symbol: '₦', name: 'Naira' }, 
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'Pound Sterling' },
+];
+
+const useCurrencyState = () => { 
+  const getInitialCurrency = () => {
+    if (typeof window !== 'undefined') {
+      const storedCode = localStorage.getItem(CURRENCY_STORAGE_KEY);
+      const defaultCurrency = SUPPORTED_CURRENCIES.find(c => c.code === 'USD') || SUPPORTED_CURRENCIES[0];
+      
+      if (storedCode) {
+        return SUPPORTED_CURRENCIES.find(c => c.code === storedCode) || defaultCurrency;
+      }
+      return defaultCurrency;
+    }
+    return SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+  };
+
+  const [preferredCurrency, setPreferredCurrency] = useState(getInitialCurrency);
+
+  // Re-fetch currency on mount
+  useEffect(() => {
+    setPreferredCurrency(getInitialCurrency());
+  }, []); 
+
+  return { preferredCurrency, setPreferredCurrency, SUPPORTED_CURRENCIES }; 
+};
+
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 // Helper to download CSV
@@ -65,7 +101,7 @@ const Reconciliation = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [timePeriod, setTimePeriod] = useState('daily');
   const [checkDate, setCheckDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [currency, setCurrency] = useState('NGN');
+  const [currency] = useState('NGN');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -79,18 +115,21 @@ const Reconciliation = () => {
   });
   const [showChecks, setShowChecks] = useState(false);
   const [showPayments, setShowPayments] = useState(false);
+ // --- Currency integration ---
+ 
+ // ➡️ ADD: Use your custom hook here
+ const { preferredCurrency} = useCurrencyState();
 
-  const currencySymbols = useMemo(() => ({
-    NGN: '₦',
-    USD: '$',
-    GBP: '£',
-    EUR: '€',
-  }), []);
+ 
+ // Format number with preferredCurrency.symbol symbol
+ //const formatCurrency = (value) => `${preferredCurrency.symbol}${Number(value).toFixed(2)}`;
 
-  // Format currency
-  const formatCurrency = useCallback((value) => `${currencySymbols[currency]}${Number(value || 0).toFixed(2)}`, [currency, currencySymbols]);
+ const formatCurrency = (value) => 
+   `${preferredCurrency.symbol}${Number(value).toLocaleString('en-US', {
+       minimumFractionDigits: 2,
+       maximumFractionDigits: 2,
+   })}`;
 
-  // Stable payment methods for modal
   const allPaymentMethods = useMemo(() => ['Cash', 'Card', 'Bank Transfer', 'Wallet'], []);
 
   // Fetch stores
@@ -280,12 +319,12 @@ const fetchReconciliationChecks = useCallback(async () => {
     labels: paymentMethods,
     datasets: [
       {
-        label: `Expected Money (${currencySymbols[currency]})`,
+        label: `Expected Money (${preferredCurrency[currency]})`,
         data: paymentMethods.map(method => salesByPaymentMethod[method]?.amount || 0),
         backgroundColor: '#10B981',
       },
       {
-        label: `Actual Money (${currencySymbols[currency]})`,
+        label: `Actual Money (${preferredCurrency[currency]})`,
         data: paymentMethods.map(method => {
           const check = reconciliationChecks.find(c => normalizePaymentMethod(c.payment_method) === method && c.check_date === checkDate);
           return check ? check.actual_amount : 0;
@@ -293,7 +332,7 @@ const fetchReconciliationChecks = useCallback(async () => {
         backgroundColor: '#3B82F6',
       },
     ],
-  }), [paymentMethods, salesByPaymentMethod, reconciliationChecks, checkDate, currencySymbols, currency]);
+  }), [paymentMethods, salesByPaymentMethod, reconciliationChecks, checkDate, preferredCurrency, currency]);
 
  const handleAddCheck = useCallback(async () => {
   if (!storeId || !newCheck.payment_method || !checkDate) {
@@ -516,22 +555,8 @@ const handleEditCheck = useCallback(async () => {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="currency-filter">
-              Currency
-            </label>
-            <select
-              id="currency-filter"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              aria-label="Select Currency"
-              disabled={isLoading}
-            >
-              <option value="NGN">Naira (₦)</option>
-              <option value="USD">US Dollar ($)</option>
-              <option value="GBP">British Pound (£)</option>
-              <option value="EUR">Euro (€)</option>
-            </select>
+            
+           
           </div>
           <button
             className="col-span-1 sm:col-span-2 md:col-span-1 mt-6 bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 transition transform hover:scale-105"
@@ -635,7 +660,7 @@ const handleEditCheck = useCallback(async () => {
                   <tr className="bg-gray-100">
                     <th className="p-3 text-left text-gray-700 font-semibold">Date</th>
                     <th className="p-3 text-left text-gray-700 font-semibold">Payment Method</th>
-                    <th className="p-3 text-left text-gray-700 font-semibold">Amount ({currencySymbols[currency]})</th>
+                    <th className="p-3 text-left text-gray-700 font-semibold">Amount {preferredCurrency[currency]}</th>
                     <th className="p-3 text-left text-gray-700 font-semibold">Customer</th>
                   </tr>
                 </thead>
@@ -763,9 +788,9 @@ const handleEditCheck = useCallback(async () => {
                       <th className="p-3 text-left text-gray-700 font-semibold">Store</th>
                       <th className="p-3 text-left text-gray-700 font-semibold">Period</th>
                       <th className="p-3 text-left text-gray-700 font-semibold">Payment Method</th>
-                      <th className="p-3 text-left text-gray-700 font-semibold">Expected ({currencySymbols[currency]})</th>
-                      <th className="p-3 text-left text-gray-700 font-semibold">Actual ({currencySymbols[currency]})</th>
-                      <th className="p-3 text-left text-gray-700 font-semibold">Discrepancy ({currencySymbols[currency]})</th>
+                      <th className="p-3 text-left text-gray-700 font-semibold">Expected {preferredCurrency[currency]}</th>
+                      <th className="p-3 text-left text-gray-700 font-semibold">Actual {preferredCurrency[currency]}</th>
+                      <th className="p-3 text-left text-gray-700 font-semibold">Discrepancy {preferredCurrency[currency]}</th>
                       <th className="p-3 text-left text-gray-700 font-semibold">Status</th>
                       <th className="p-3 text-left text-gray-700 font-semibold">Notes</th>
                       <th className="p-3 text-left text-gray-700 font-semibold">Actions</th>
@@ -840,7 +865,7 @@ const handleEditCheck = useCallback(async () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Money You Should Have ({currencySymbols[currency]})</label>
+                <label className="block text-sm font-medium text-gray-700">Money You Should Have {preferredCurrency[currency]}</label>
                 <input
                   type="number"
                   className="w-full p-2 border rounded-lg bg-gray-100"
@@ -850,7 +875,7 @@ const handleEditCheck = useCallback(async () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Money You Have ({currencySymbols[currency]})</label>
+                <label className="block text-sm font-medium text-gray-700">Money You Have {preferredCurrency[currency]}</label>
                 <input
                   type="number"
                   className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
@@ -922,7 +947,7 @@ const handleEditCheck = useCallback(async () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Money You Should Have ({currencySymbols[currency]})</label>
+                <label className="block text-sm font-medium text-gray-700">Money You Should Have ({preferredCurrency[currency]})</label>
                 <input
                   type="number"
                   className="w-full p-2 border rounded-lg bg-gray-100"
@@ -932,7 +957,7 @@ const handleEditCheck = useCallback(async () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">Money You Have ({currencySymbols[currency]})</label>
+                <label className="block text-sm font-medium text-gray-700">Money You Have ({preferredCurrency[currency]})</label>
                 <input
                   type="number"
                   className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"

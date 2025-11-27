@@ -538,38 +538,70 @@ useEffect(() => {
                     </table>
                   </div>
                   {filteredSaleGroups.length > saleGroupsPerPage && (
-                    <div className="flex items-center justify-between mt-4">
-                      <button
-                        onClick={() => handleSaleGroupsPageChange(currentPage - 1)}
-                        disabled={currentPage === 1}
-                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
-                      >
-                        Previous
-                      </button>
-                      <div className="flex gap-2">
-                        {Array.from({ length: totalSaleGroupsPages }, (_, i) => i + 1).map(page => (
-                          <button
-                            key={page}
-                            onClick={() => handleSaleGroupsPageChange(page)}
-                            className={`px-3 py-1 rounded-lg ${
-                              currentPage === page
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        onClick={() => handleSaleGroupsPageChange(currentPage + 1)}
-                        disabled={currentPage === totalSaleGroupsPages}
-                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-300 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  )}
+  <div className="flex flex-col sm:flex-row justify-between items-center mt-6 px-4 gap-4">
+    
+    {/* Showing X to Y of Z */}
+    <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+      Showing{' '}
+      {filteredSaleGroups.length === 0
+        ? '0'
+        : `${(currentPage - 1) * saleGroupsPerPage + 1} to ${Math.min(
+            currentPage * saleGroupsPerPage,
+            filteredSaleGroups.length
+          )}`}{' '}
+      of {filteredSaleGroups.length} sale groups
+    </div>
+
+    {/* Pagination Controls */}
+    <div className="flex items-center space-x-2">
+
+      {/* Previous Button */}
+      <button
+        onClick={() => handleSaleGroupsPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          currentPage === 1
+            ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+        }`}
+        aria-label="Previous page"
+      >
+        Previous
+      </button>
+
+      {/* Page Number Buttons */}
+      {Array.from({ length: totalSaleGroupsPages }, (_, i) => i + 1).map((page) => (
+        <button
+          key={page}
+          onClick={() => handleSaleGroupsPageChange(page)}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+            currentPage === page
+              ? 'bg-indigo-600 text-white dark:bg-indigo-700 shadow-md'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+          }`}
+          aria-current={currentPage === page ? 'page' : undefined}
+        >
+          {page}
+        </button>
+      ))}
+
+      {/* Next Button */}
+      <button
+        onClick={() => handleSaleGroupsPageChange(currentPage + 1)}
+        disabled={currentPage === totalSaleGroupsPages}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          currentPage === totalSaleGroupsPages
+            ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+        }`}
+        aria-label="Next page"
+      >
+        Next
+      </button>
+
+    </div>
+  </div>
+)}
                 </motion.div>
               )}
             </AnimatePresence>

@@ -25,6 +25,7 @@ import AIpowerInsights from './AIpowerInsights';
 import AdminOps from './AdminOps';
 import Financials from '../Ops/Financials'
 
+
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState('Fix Scan');
   const [darkMode, setDarkMode] = useState(false);

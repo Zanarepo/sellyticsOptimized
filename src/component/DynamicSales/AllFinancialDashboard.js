@@ -10,6 +10,55 @@ import 'tailwindcss/tailwind.css';
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Tooltip, Legend);
 
+
+// --- preferredCurrency.symbol LOGIC DEFINITION ---
+const CURRENCY_STORAGE_KEY = 'preferred_currency';
+
+const SUPPORTED_CURRENCIES = [ // ⬅️ FIXES 'SUPPORTED_CURRENCIES' is not defined
+  { code: 'NGN', symbol: '₦', name: 'Naira' }, 
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'Pound Sterling' },
+];
+
+/**
+ * Custom hook logic to manage preferredCurrency.symbol state and localStorage.
+ */
+const useCurrencyState = () => { // ⬅️ FIXES 'useCurrencyState' is not defined
+  const getInitialCurrency = () => {
+    if (typeof window !== 'undefined') {
+      const storedCode = localStorage.getItem(CURRENCY_STORAGE_KEY);
+      const defaultCurrency = SUPPORTED_CURRENCIES.find(c => c.code === 'USD') || SUPPORTED_CURRENCIES[0];
+      
+      if (storedCode) {
+        return SUPPORTED_CURRENCIES.find(c => c.code === storedCode) || defaultCurrency;
+      }
+      return defaultCurrency;
+    }
+    return SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+  };
+
+  const [preferredCurrency, setPreferredCurrency] = useState(getInitialCurrency);
+
+  const setCurrency = useCallback((currencyCode) => {
+    const newCurrency = SUPPORTED_CURRENCIES.find(c => c.code === currencyCode);
+    if (newCurrency) {
+      setPreferredCurrency(newCurrency);
+      localStorage.setItem(CURRENCY_STORAGE_KEY, newCurrency.code);
+    }
+  }, []);
+
+  // Re-fetch preferredCurrency.symbol on component mount to ensure sync with localStorage
+  useEffect(() => {
+    setPreferredCurrency(getInitialCurrency());
+  }, []);
+
+  return { preferredCurrency, setCurrency };
+};
+// --- END preferredCurrency.symbol LOGIC ---
+
+
+
 const FinancialDashboard = () => {
   const ownerId = Number(localStorage.getItem('owner_id')) || null;
   const [storeId, setStoreId] = useState(localStorage.getItem('store_id') || '');
@@ -26,20 +75,21 @@ const FinancialDashboard = () => {
   const [timeGranularity, setTimeGranularity] = useState('monthly');
   const [metricFilter, setMetricFilter] = useState('All');
   const [comparisonMetric, setComparisonMetric] = useState('totalSales'); // For comparison chart
-  const [currency, setCurrency] = useState('NGN');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  const currencySymbols = {
-    NGN: '₦',
-    USD: '$',
-    GBP: '£',
-    EUR: '€',
-  };
+  // ➡️ ADD: Use your custom hook here
+  const { preferredCurrency, setCurrency } = useCurrencyState();
 
-  // Format number with currency symbol
-  const formatCurrency = (value) => `${currencySymbols[currency]}${value.toFixed(2)}`;
+ 
+  // Format number with preferredCurrency.symbol symbol
+  //const formatCurrency = (value) => `${preferredCurrency.symbol}${Number(value).toFixed(2)}`;
 
+  const formatCurrency = (value) => 
+    `${preferredCurrency.symbol}${Number(value).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    })}`;
   // Fetch stores for dropdown, restricted to ownerId
   const fetchStores = useCallback(async () => {
     if (!ownerId) {
@@ -317,7 +367,7 @@ const FinancialDashboard = () => {
   const salesTrendData = {
     labels: Object.keys(salesByPeriod).sort(),
     datasets: [{
-      label: `Money Earned (${currencySymbols[currency]})`,
+      label: `Money Earned ${preferredCurrency.symbol}`,
       data: Object.keys(salesByPeriod).sort().map(period => salesByPeriod[period]),
       borderColor: '#10B981',
       backgroundColor: 'rgba(16, 185, 129, 0.2)',
@@ -329,7 +379,7 @@ const FinancialDashboard = () => {
   const cogsVsSalesData = {
     labels: ['Money Earned', 'Cost of Goods'],
     datasets: [{
-      label: `Amount (${currencySymbols[currency]})`,
+      label: `Amount (${preferredCurrency.symbol})`,
       data: [totalSales, totalCOGS],
       backgroundColor: ['#10B981', '#EF4444'],
     }],
@@ -343,7 +393,7 @@ const FinancialDashboard = () => {
   const expensePieData = {
     labels: Object.keys(expenseByType),
     datasets: [{
-      label: `Money Spent (${currencySymbols[currency]})`,
+      label: `Money Spent (${preferredCurrency.symbol})`,
       data: Object.values(expenseByType),
       backgroundColor: ['#10B981', '#EF4444', '#3B82F6', '#F59E0B', '#6B7280'],
     }],
@@ -353,7 +403,7 @@ const FinancialDashboard = () => {
   const comparisonChartData = {
     labels: storeComparison.map(s => s.storeName),
     datasets: [{
-      label: comparisonMetric === 'profitMargin' ? 'Profit Margin (%)' : `${comparisonMetric.replace('total', '')} (${currencySymbols[currency]})`,
+      label: comparisonMetric === 'profitMargin' ? 'Profit Margin (%)' : `${comparisonMetric.replace('total', '')} (${preferredCurrency.symbol[preferredCurrency.symbol]})`,
       data: storeComparison.map(s => s[comparisonMetric]),
       backgroundColor: comparisonMetric === 'totalSales' ? '#10B981' :
                        comparisonMetric === 'totalExpenses' ? '#EF4444' :
@@ -474,23 +524,28 @@ const FinancialDashboard = () => {
             <option value="monthly">Monthly</option>
           </select>
         </div>
-        <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="currency-filter">
-            Currency
-          </label>
-          <select
-            id="currency-filter"
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition"
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
-            aria-label="Select Currency"
-          >
-            <option value="NGN">Naira (₦)</option>
-            <option value="USD">US Dollar ($)</option>
-            <option value="GBP">British Pound (£)</option>
-            <option value="EUR">Euro (€)</option>
-          </select>
-        </div>
+       
+<div>
+  <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="preferredCurrency.symbol-filter">
+Cureency
+  </label>
+  <select
+    id="preferredCurrency.symbol-filter"
+    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition"
+    // Use the code from the preferredCurrency object for the selected value
+    value={preferredCurrency.code} 
+    // Use the setter function from the hook
+    onChange={(e) => setCurrency(e.target.value)}
+    aria-label="Select preferredCurrency.symbol"
+  >
+    {/* Use the SUPPORTED_CURRENCIES constant */}
+    {SUPPORTED_CURRENCIES.map(c => (
+      <option key={c.code} value={c.code}>
+        {c.name} ({c.symbol})
+      </option>
+    ))}
+  </select>
+</div>
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="metric-filter">
             Metric
@@ -648,7 +703,7 @@ const FinancialDashboard = () => {
                       <thead>
                         <tr className="bg-gray-100">
                           <th className="p-3 text-left text-gray-700 font-semibold">Product</th>
-                          <th className="p-3 text-left text-gray-700 font-semibold">Total Sales ({currencySymbols[currency]})</th>
+                          <th className="p-3 text-left text-gray-700 font-semibold">Total Sales ({preferredCurrency.symbol[preferredCurrency.symbol]})</th>
                           <th className="p-3 text-left text-gray-700 font-semibold">Total Quantity Sold</th>
                         </tr>
                       </thead>
@@ -717,11 +772,11 @@ const FinancialDashboard = () => {
                   <thead>
                     <tr className="bg-gray-100">
                       <th className="p-3 text-left text-gray-700 font-semibold">Store</th>
-                      <th className="p-3 text-left text-gray-700 font-semibold">Money Earned ({currencySymbols[currency]})</th>
-                      <th className="p-3 text-left text-gray-700 font-semibold">Money Spent ({currencySymbols[currency]})</th>
-                      <th className="p-3 text-left text-gray-700 font-semibold">Cost of Goods ({currencySymbols[currency]})</th>
-                      <th className="p-3 text-left text-gray-700 font-semibold">Money Owed ({currencySymbols[currency]})</th>
-                      <th className="p-3 text-left text-gray-700 font-semibold">Profit ({currencySymbols[currency]})</th>
+                      <th className="p-3 text-left text-gray-700 font-semibold">Money Earned {preferredCurrency.symbol[preferredCurrency.symbol]}</th>
+                      <th className="p-3 text-left text-gray-700 font-semibold">Money Spent {preferredCurrency.symbol[preferredCurrency.symbol]}</th>
+                      <th className="p-3 text-left text-gray-700 font-semibold">Cost of Goods {preferredCurrency.symbol[preferredCurrency.symbol]}</th>
+                      <th className="p-3 text-left text-gray-700 font-semibold">Money Owed {preferredCurrency.symbol[preferredCurrency.symbol]}</th>
+                      <th className="p-3 text-left text-gray-700 font-semibold">Profit {preferredCurrency.symbol[preferredCurrency.symbol]}</th>
                       <th className="p-3 text-left text-gray-700 font-semibold">Profit Margin (%)</th>
                     </tr>
                   </thead>

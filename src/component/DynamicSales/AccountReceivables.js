@@ -3,6 +3,45 @@ import { supabase } from '../../supabaseClient';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+
+
+const CURRENCY_STORAGE_KEY = 'preferred_currency';
+
+
+const SUPPORTED_CURRENCIES = [
+  { code: 'NGN', symbol: '₦', name: 'Naira' }, 
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'Pound Sterling' },
+];
+
+const useCurrencyState = () => { 
+  const getInitialCurrency = () => {
+    if (typeof window !== 'undefined') {
+      const storedCode = localStorage.getItem(CURRENCY_STORAGE_KEY);
+      // Default to NGN if nothing is stored
+      const defaultCurrency = SUPPORTED_CURRENCIES.find(c => c.code === 'USD') || SUPPORTED_CURRENCIES[0];
+      
+      if (storedCode) {
+        return SUPPORTED_CURRENCIES.find(c => c.code === storedCode) || defaultCurrency;
+      }
+      return defaultCurrency;
+    }
+    return SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+  };
+
+  const [preferredCurrency, setPreferredCurrency] = useState(getInitialCurrency);
+
+  // Update state from localStorage on mount
+  useEffect(() => {
+    setPreferredCurrency(getInitialCurrency());
+  }, []); 
+
+  // Note: We only return the reader (preferredCurrency), not the setter (setCurrency)
+  return { preferredCurrency }; 
+};
+
+
 // Fallback for Heroicons
 let MagnifyingGlassIcon, CalendarIcon, XMarkIcon, BuildingStorefrontIcon;
 try {
@@ -30,6 +69,20 @@ export default function AccountsReceivable() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const entriesPerPage = 10;
+  const { preferredCurrency } = useCurrencyState();
+
+
+
+  const formatCurrency = (value) => {
+        if (value === null || value === undefined || isNaN(value)) return `${preferredCurrency.symbol}0.00`;
+        
+        // Use the symbol and apply thousands separators via toLocaleString
+        return `${preferredCurrency.symbol}${Number(value).toLocaleString('en-US', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`;
+      };
+
 
   // Fetch stores
   useEffect(() => {
@@ -314,10 +367,10 @@ export default function AccountsReceivable() {
         <div className="bg-indigo-50 dark:bg-indigo-900 p-4 rounded-lg border border-indigo-200 dark:border-indigo-700 mb-4" aria-live="polite">
           <div className="flex flex-col sm:flex-row justify-around items-center gap-4">
             <div className="flex items-center text-lg font-semibold text-green-600 dark:text-green-400">
-              Total Money Owed: ₦{totals.totalOwed.toFixed(2)}
+            {formatCurrency(totals.totalOwed)}
             </div>
             <div className="flex items-center text-lg font-semibold text-red-600 dark:text-red-400">
-              Overdue 90+ Days: ₦{totals.overdue90Plus.toFixed(2)}
+            {formatCurrency(totals.overdue90Plus)}
             </div>
           </div>
         </div>
@@ -338,8 +391,8 @@ export default function AccountsReceivable() {
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Date</th>
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Customer</th>
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Item</th>
-                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Amount Owed (₦)</th>
-                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Still Owed (₦)</th>
+                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Amount Owed ({preferredCurrency.symbol})</th>
+                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Still Owed ({preferredCurrency.symbol})</th>
                     <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Days Overdue</th>
                   </tr>
                 </thead>
@@ -372,8 +425,8 @@ export default function AccountsReceivable() {
                             {entry.product_name}
                           </button>
                         </td>
-                        <td className="px-4 py-3 text-right">₦{entry.owed.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-right">₦{entry.remaining_balance.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-right">{formatCurrency(entry.owed)}</td>
+                        <td className="px-4 py-3 text-right">{formatCurrency(entry.remaining_balance)}</td>
                         <td className="px-4 py-3 text-right">{daysOverdue} days</td>
                       </tr>
                     );

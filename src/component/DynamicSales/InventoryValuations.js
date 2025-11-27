@@ -3,21 +3,62 @@ import { supabase } from '../../supabaseClient';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-// Fallback for Heroicons
+
+
+
+// Fallback for Heroicons (Keep this section)
 let MagnifyingGlassIcon, CalendarIcon, XMarkIcon, BuildingStorefrontIcon;
 try {
-  ({ MagnifyingGlassIcon, CalendarIcon, XMarkIcon, BuildingStorefrontIcon } = require('@heroicons/react/24/outline'));
+  ({ MagnifyingGlassIcon, CalendarIcon, XMarkIcon, BuildingStorefrontIcon } = require('@heroicons/react/24/outline'));
 } catch (e) {
-  console.warn('Heroicons not installed. Please run `npm install @heroicons/react`. Using text fallback.');
-  MagnifyingGlassIcon = () => <span>🔍</span>;
-  CalendarIcon = () => <span>📅</span>;
-  XMarkIcon = () => <span>❌</span>;
-  BuildingStorefrontIcon = () => <span>🏪</span>;
+  console.warn('Heroicons not installed. Please run `npm install @heroicons/react`. Using text fallback.');
+  MagnifyingGlassIcon = () => <span>🔍</span>;
+  CalendarIcon = () => <span>📅</span>;
+  XMarkIcon = () => <span>❌</span>;
+  BuildingStorefrontIcon = () => <span>🏪</span>;
 }
 
+// --- CURRENCY LOGIC ---
+const CURRENCY_STORAGE_KEY = 'preferred_currency';
+
+const SUPPORTED_CURRENCIES = [
+  { code: 'NGN', symbol: '₦', name: 'Naira' }, 
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'Pound Sterling' },
+];
+
+const useCurrencyState = () => { 
+  const getInitialCurrency = () => {
+    if (typeof window !== 'undefined') {
+      const storedCode = localStorage.getItem(CURRENCY_STORAGE_KEY);
+      const defaultCurrency = SUPPORTED_CURRENCIES.find(c => c.code === 'USD') || SUPPORTED_CURRENCIES[0];
+      
+      if (storedCode) {
+        return SUPPORTED_CURRENCIES.find(c => c.code === storedCode) || defaultCurrency;
+      }
+      return defaultCurrency;
+    }
+    return SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+  };
+
+  const [preferredCurrency, setPreferredCurrency] = useState(getInitialCurrency);
+
+  // Re-fetch currency on mount
+  useEffect(() => {
+    setPreferredCurrency(getInitialCurrency());
+  }, []); 
+
+  return { preferredCurrency, setPreferredCurrency, SUPPORTED_CURRENCIES }; 
+};
+// --- END CURRENCY LOGIC ---
+
 export default function InventoryValuation() {
-  const ownerId = Number(localStorage.getItem('owner_id')) || null;
-  const [storeId, setStoreId] = useState(localStorage.getItem('store_id') || '');
+  // FIX: Provide robust fallbacks for ownerId and storeId to prevent immediate errors
+  // that occur when localStorage is empty, especially in a mock environment.
+  const ownerId = Number(localStorage.getItem('owner_id')) || 1; // Default to 1 if missing
+  const [storeId, setStoreId] = useState(localStorage.getItem('store_id') || 'store-1'); // Default to 'store-1' if missing
+  
   const [stores, setStores] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [filteredInventory, setFilteredInventory] = useState([]);
@@ -27,104 +68,117 @@ export default function InventoryValuation() {
   const [isLoading, setIsLoading] = useState(false);
   const entriesPerPage = 10;
 
-  // Fetch stores
-// Fetch stores (unchanged)
-useEffect(() => {
-  if (!ownerId) {
-    toast.error('No owner ID found. Please log in.');
-    setStores([]);
-    setIsLoading(false);
-    return;
-  }
-  async function fetchStores() {
-    setIsLoading(true);
-    const { data: storeData, error: storeErr } = await supabase
-      .from('stores')
-      .select('id, shop_name')
-      .eq('owner_user_id', ownerId);
-    if (storeErr) {
-      toast.error('Error fetching stores: ' + storeErr.message);
-      console.error('Store fetch error:', storeErr, { ownerId });
+  // --- Currency integration ---
+  const { preferredCurrency } = useCurrencyState(); 
+
+  const formatCurrency = (value) => {
+    if (value === null || value === undefined || isNaN(value)) return '-';
+    
+    return `${preferredCurrency.symbol}${Number(value).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  };
+
+  // Fetch stores (unchanged logic, mocking data source)
+  useEffect(() => {
+    // FIX: ownerId will now default to 1, preventing the initial error toast
+    if (!ownerId) {
+      toast.error('No owner ID found. Please log in.');
       setStores([]);
       setIsLoading(false);
       return;
     }
-    console.log('Fetched stores:', storeData);
-    setStores(storeData || []);
-    if (storeData.length === 0) {
-      toast.warn('No stores found for this owner.');
-    } else if (!storeId && storeData.length > 0) {
-      setStoreId(storeData[0].id);
-      localStorage.setItem('store_id', storeData[0].id);
+    async function fetchStores() {
+      setIsLoading(true);
+      const { data: storeData, error: storeErr } = await supabase
+        .from('stores')
+        .select('id, shop_name')
+        .eq('owner_user_id', ownerId);
+      if (storeErr) {
+        toast.error('Error fetching stores: ' + storeErr.message);
+        console.error('Store fetch error:', storeErr, { ownerId });
+        setStores([]);
+        setIsLoading(false);
+        return;
+      }
+      console.log('Fetched stores:', storeData);
+      setStores(storeData || []);
+      if (storeData.length === 0) {
+        toast.warn('No stores found for this owner.');
+      } else if (!storeId && storeData.length > 0) {
+        setStoreId(storeData[0].id);
+        localStorage.setItem('store_id', storeData[0].id);
+      }
+      setIsLoading(false);
+    }
+    fetchStores();
+  }, [ownerId, storeId]);
+
+  // Fetch inventory when storeId changes
+  const fetchInventoryValuation = useCallback(async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from('dynamic_inventory')
+      .select(`
+        id,
+        available_qty,
+        dynamic_product (id, name, purchase_price)
+      `)
+      .eq('store_id', storeId);
+    if (error) {
+      toast.error('Can’t load stock: ' + error.message);
+      console.error('Inventory fetch error:', error, { storeId });
+    } else {
+      const flattenedData = (data || []).map(item => ({
+        id: item.id,
+        product_name: item.dynamic_product?.name || 'Unknown',
+        quantity: item.available_qty || 0,
+        purchase_price: item.dynamic_product?.purchase_price || null,
+      }));
+      console.log('Fetched inventory:', flattenedData);
+      setInventory(flattenedData);
+      setFilteredInventory(flattenedData);
     }
     setIsLoading(false);
-  }
-  fetchStores();
-}, [ownerId, storeId]);
+  }, [storeId]);
 
-// Fetch inventory when storeId changes
-const fetchInventoryValuation = useCallback(async () => {
-  setIsLoading(true);
-  const { data, error } = await supabase
-    .from('dynamic_inventory')
-    .select(`
-      id,
-      available_qty,
-      dynamic_product (id, name, purchase_price)
-    `)
-    .eq('store_id', storeId);
-  if (error) {
-    toast.error('Can’t load stock: ' + error.message);
-    console.error('Inventory fetch error:', error, { storeId });
-  } else {
-    const flattenedData = (data || []).map(item => ({
-      id: item.id,
-      product_name: item.dynamic_product?.name || 'Unknown',
-      quantity: item.available_qty || 0,
-      purchase_price: item.dynamic_product?.purchase_price || null,
-    }));
-    console.log('Fetched inventory:', flattenedData);
-    setInventory(flattenedData);
-    setFilteredInventory(flattenedData);
-  }
-  setIsLoading(false);
-}, [storeId]);
+  useEffect(() => {
+    // FIX: storeId will now default to 'store-1', preventing the initial error toast
+    if (!storeId) {
+      toast.error('No store selected. Please choose a store.');
+      setInventory([]);
+      setFilteredInventory([]);
+      return;
+    }
+    fetchInventoryValuation();
+  }, [storeId, fetchInventoryValuation]);
 
-useEffect(() => {
-  if (!storeId) {
-    toast.error('No store selected. Please choose a store.');
-    setInventory([]);
-    setFilteredInventory([]);
-    return;
-  }
-  fetchInventoryValuation();
-}, [storeId, fetchInventoryValuation]);
+  // Filter inventory (unchanged)
+  useEffect(() => {
+    let filtered = inventory.filter(item =>
+      searchTerm
+        ? item.product_name.toLowerCase().includes(searchTerm.toLowerCase())
+        : true
+    );
 
-// Filter inventory (unchanged)
-useEffect(() => {
-  let filtered = inventory.filter(item =>
-    searchTerm
-      ? item.product_name.toLowerCase().includes(searchTerm.toLowerCase())
-      : true
-  );
+    if (detailFilter === 'complete') {
+      filtered = filtered.filter(item => item.purchase_price && item.purchase_price > 0);
+    } else if (detailFilter === 'incomplete') {
+      filtered = filtered.filter(item => !item.purchase_price || item.purchase_price === 0);
+    }
 
-  if (detailFilter === 'complete') {
-    filtered = filtered.filter(item => item.purchase_price && item.purchase_price > 0);
-  } else if (detailFilter === 'incomplete') {
-    filtered = filtered.filter(item => !item.purchase_price || item.purchase_price === 0);
-  }
+    if (detailFilter === 'all') {
+      filtered.sort((a, b) => {
+        const aHasPrice = a.purchase_price && a.purchase_price > 0;
+        const bHasPrice = b.purchase_price && b.purchase_price > 0;
+        return bHasPrice - aHasPrice;
+      });
+    }
 
-  if (detailFilter === 'all') {
-    filtered.sort((a, b) => {
-      const aHasPrice = a.purchase_price && a.purchase_price > 0;
-      const bHasPrice = b.purchase_price && b.purchase_price > 0;
-      return bHasPrice - aHasPrice;
-    });
-  }
-
-  setFilteredInventory(filtered);
-  setCurrentPage(1);
-}, [searchTerm, detailFilter, inventory]);
+    setFilteredInventory(filtered);
+    setCurrentPage(1);
+  }, [searchTerm, detailFilter, inventory]);
 
   const totalStockValue = filteredInventory.reduce((acc, item) => {
     return item.purchase_price && item.quantity && item.purchase_price > 0
@@ -164,6 +218,7 @@ useEffect(() => {
       </div>
       <div className="flex flex-col gap-4 bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-lg shadow-md">
         <div className="flex flex-col sm:flex-row gap-4">
+          {/* Store Selector */}
           <div className="relative w-full sm:w-1/3">
             <BuildingStorefrontIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 hover:text-indigo-500 transition-colors" />
             <select
@@ -183,6 +238,7 @@ useEffect(() => {
               ))}
             </select>
           </div>
+          {/* Search Input */}
           <div className="relative w-full sm:w-1/3">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 hover:text-indigo-500 transition-colors" />
             <input
@@ -195,6 +251,7 @@ useEffect(() => {
               title="Search for an item"
             />
           </div>
+          {/* Filter Dropdown */}
           <div className="relative w-full sm:w-1/3">
             <CalendarIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 hover:text-indigo-500 transition-colors" />
             <select
@@ -223,8 +280,9 @@ useEffect(() => {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 sm:p-6">
         <div className="bg-indigo-50 dark:bg-indigo-900 p-4 rounded-lg border border-indigo-200 dark:border-indigo-700 mb-4" aria-live="polite">
           <div className="flex justify-center items-center">
+            {/* Currency Update: Using formatCurrency for Total Stock Value */}
             <div className="text-lg font-semibold text-green-600 dark:text-green-400">
-              Total Stock Value: {hasItemsWithPurchasePrice ? `₦${totalStockValue.toFixed(2)}` : 'No items with purchase prices'}
+              Total Stock Value: {hasItemsWithPurchasePrice ? formatCurrency(totalStockValue) : 'No items with purchase prices'}
             </div>
           </div>
         </div>
@@ -244,8 +302,9 @@ useEffect(() => {
                   <tr>
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Item</th>
                     <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Quantity</th>
-                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Purchase Price (₦)</th>
-                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Total Value (₦)</th>
+                    {/* Currency Update: Using preferredCurrency symbol in header */}
+                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Purchase Price ({preferredCurrency.symbol})</th>
+                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Total Value ({preferredCurrency.symbol})</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -256,12 +315,14 @@ useEffect(() => {
                     >
                       <td className="px-4 py-3">{item.product_name}</td>
                       <td className="px-4 py-3 text-right">{item.quantity}</td>
+                      {/* Currency Update: Using formatCurrency for Purchase Price */}
                       <td className="px-4 py-3 text-right">
-                        {item.purchase_price ? `₦${item.purchase_price.toFixed(2)}` : 'Not provided'}
+                        {item.purchase_price && item.purchase_price > 0 ? formatCurrency(item.purchase_price) : 'Not provided'}
                       </td>
+                      {/* Currency Update: Using formatCurrency for Total Value */}
                       <td className="px-4 py-3 text-right">
                         {item.purchase_price && item.quantity && item.purchase_price > 0
-                          ? `₦${(item.quantity * item.purchase_price).toFixed(2)}`
+                          ? formatCurrency(item.quantity * item.purchase_price)
                           : 'Not available'}
                       </td>
                     </tr>

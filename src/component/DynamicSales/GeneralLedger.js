@@ -3,6 +3,43 @@ import { supabase } from '../../supabaseClient';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+
+// INSERT THIS BLOCK BEFORE export default function GeneralLedger() { ...
+
+const CURRENCY_STORAGE_KEY = 'preferred_currency';
+
+const SUPPORTED_CURRENCIES = [
+  { code: 'NGN', symbol: '₦', name: 'Naira' }, 
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'Pound Sterling' },
+];
+
+const useCurrencyState = () => { 
+  const getInitialCurrency = () => {
+    if (typeof window !== 'undefined') {
+      const storedCode = localStorage.getItem(CURRENCY_STORAGE_KEY);
+      const defaultCurrency = SUPPORTED_CURRENCIES.find(c => c.code === 'USD') || SUPPORTED_CURRENCIES[0];
+      
+      if (storedCode) {
+        return SUPPORTED_CURRENCIES.find(c => c.code === storedCode) || defaultCurrency;
+      }
+      return defaultCurrency;
+    }
+    return SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+  };
+
+  const [preferredCurrency, setPreferredCurrency] = useState(getInitialCurrency);
+
+  useEffect(() => {
+    setPreferredCurrency(getInitialCurrency());
+  }, []); 
+
+  return { preferredCurrency, setPreferredCurrency, SUPPORTED_CURRENCIES }; 
+};
+
+
+
 // Fallback for Heroicons
 let MagnifyingGlassIcon, CalendarIcon, XMarkIcon, BuildingStorefrontIcon;
 try {
@@ -27,6 +64,20 @@ export default function GeneralLedger() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const entriesPerPage = 10;
+
+// ➡️ ADD: Use your custom hook here
+const { preferredCurrency} = useCurrencyState();
+
+ 
+// Format number with preferredCurrency.symbol symbol
+//const formatCurrency = (value) => `${preferredCurrency.symbol}${Number(value).toFixed(2)}`;
+
+const formatCurrency = (value) => 
+  `${preferredCurrency.symbol}${Number(value).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+  })}`;
+
 
   // Fetch stores
   useEffect(() => {
@@ -237,10 +288,10 @@ export default function GeneralLedger() {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4">
         <div className="flex justify-between items-center mb-4" aria-live="polite">
           <div className="text-lg font-semibold text-green-600 dark:text-green-400">
-            Money In: ₦{totals.totalDebit.toFixed(2)}
+            Money In: {formatCurrency(totals.totalDebit)}
           </div>
           <div className="text-lg font-semibold text-red-600 dark:text-red-400">
-            Money Out: ₦{totals.totalCredit.toFixed(2)}
+            Money Out: {formatCurrency(totals.totalCredit)}
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -260,8 +311,8 @@ export default function GeneralLedger() {
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Date</th>
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Money Type</th>
                     <th className="text-left px-4 py-3 font-medium border-b dark:border-gray-700">Description</th>
-                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Money In (₦)</th>
-                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Money Out (₦)</th>
+                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Money In ({preferredCurrency.symbol})</th>
+                    <th className="text-right px-4 py-3 font-medium border-b dark:border-gray-700">Money Out ({preferredCurrency.symbol})</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -274,10 +325,10 @@ export default function GeneralLedger() {
                       <td className="px-4 py-3">{entry.account}</td>
                       <td className="px-4 py-3">{entry.description}</td>
                       <td className="px-4 py-3 text-right">
-                        {entry.debit ? `₦${entry.debit.toFixed(2)}` : '-'}
+                        {entry.debit ? `${formatCurrency(entry.debit)}` : '-'}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {entry.credit ? `₦${entry.credit.toFixed(2)}` : '-'}
+                        {entry.credit ? `${formatCurrency(entry.credit)}` : '-'}
                       </td>
                     </tr>
                   ))}

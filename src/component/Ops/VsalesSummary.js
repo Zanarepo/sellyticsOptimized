@@ -1,5 +1,5 @@
 // SalesDashboard.jsx
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "../../supabaseClient";
 import jsPDF from "jspdf";
 import { format, startOfWeek, startOfMonth } from "date-fns";
@@ -13,7 +13,48 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const CURRENCY_SYMBOLS = ["$", "€", "£", "¥", "₦"];
+// --- Currency State Logic ---
+const CURRENCY_STORAGE_KEY = 'preferred_currency';
+
+const SUPPORTED_CURRENCIES = [
+  { code: 'NGN', symbol: '₦', name: 'Naira' }, 
+  { code: 'USD', symbol: '$', name: 'US Dollar' },
+  { code: 'EUR', symbol: '€', name: 'Euro' },
+  { code: 'GBP', symbol: '£', name: 'Pound Sterling' },
+];
+
+const useCurrencyState = () => {
+  const getInitialCurrency = () => {
+    if (typeof window !== 'undefined') {
+      const storedCode = localStorage.getItem(CURRENCY_STORAGE_KEY);
+      const defaultCurrency = SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+      if (storedCode) {
+        return SUPPORTED_CURRENCIES.find(c => c.code === storedCode) || defaultCurrency;
+      }
+      return defaultCurrency;
+    }
+    return SUPPORTED_CURRENCIES.find(c => c.code === 'NGN') || SUPPORTED_CURRENCIES[0];
+  };
+
+  const [preferredCurrency, setPreferredCurrency] = useState(getInitialCurrency);
+
+  const setCurrency = useCallback((currencyCode) => {
+    const newCurrency = SUPPORTED_CURRENCIES.find(c => c.code === currencyCode);
+    if (newCurrency) {
+      setPreferredCurrency(newCurrency);
+      localStorage.setItem(CURRENCY_STORAGE_KEY, newCurrency.code);
+    }
+  }, []);
+
+  useEffect(() => {
+    setPreferredCurrency(getInitialCurrency());
+  }, []);
+
+  return { preferredCurrency, setCurrency, SUPPORTED_CURRENCIES };
+};
+// --- End Currency State Logic ---
+
+
 const ITEMS_PER_PAGE = 50;
 
 export default function SalesDashboard() {
@@ -25,10 +66,10 @@ export default function SalesDashboard() {
   const [endDate, setEndDate] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [currency, setCurrency] = useState("₦");
+  const { preferredCurrency } = useCurrencyState(); 
   const [currentPage, setCurrentPage] = useState(1);
   const [showChart, setShowChart] = useState(false);
-
+  
   // --- Fetch sales once on mount ---
   useEffect(() => {
     const storeId = localStorage.getItem("store_id");
@@ -94,10 +135,29 @@ export default function SalesDashboard() {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredData.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredData, currentPage]);
+// Replace this line in your component
 
-  // --- Helpers ---
-  const formatCurrency = (v) => `${currency}${v.toFixed(2)}`;
+const formatCurrency = useCallback((value) => {
+  const num = Number(value);
+  const abs = Math.abs(num);
 
+  if (abs >= 1_000_000) {
+    const suffixes = ["", "K", "M", "B", "T"];
+    const tier = Math.log10(abs) / 3 | 0;
+    const suffix = suffixes[tier];
+    const scale = Math.pow(1000, tier);
+    const scaled = num / scale;
+
+    return `${preferredCurrency.symbol}${scaled.toFixed(1)}${suffix}`;
+  }
+
+  // Below 1 million → full format with commas
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: preferredCurrency.code,
+    minimumFractionDigits: 2,
+  }).format(num);
+}, [preferredCurrency]);
   // --- Preset handlers ---
   const applyPreset = (type) => {
     const today = new Date();
@@ -226,17 +286,7 @@ export default function SalesDashboard() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full sm:flex-1 p-2 border rounded dark:bg-gray-900 dark:text-white"
         />
-        <select
-          value={currency}
-          onChange={(e) => setCurrency(e.target.value)}
-          className="w-full sm:w-auto p-2 border rounded dark:bg-gray-900 dark:text-white"
-        >
-          {CURRENCY_SYMBOLS.map((sym) => (
-            <option key={sym} value={sym}>
-              {sym}
-            </option>
-          ))}
-        </select>
+       
       </div>
 
       {/* Table */}
@@ -274,38 +324,75 @@ export default function SalesDashboard() {
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="flex flex-wrap justify-center gap-2 mt-4 dark:bg-gray-900 dark:text-indigo-500">
+      {/* Beautiful & Professional Pagination – Tailored for SalesSummary */}
+{filteredData.length > ITEMS_PER_PAGE && (
+  <div className="flex flex-col sm:flex-row justify-between items-center mt-6 px-4 gap-4">
+    
+    {/* Showing X to Y of Z */}
+    <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+      Showing{' '}
+      {filteredData.length === 0
+        ? '0'
+        : `${(currentPage - 1) * ITEMS_PER_PAGE + 1} to ${Math.min(
+            currentPage * ITEMS_PER_PAGE,
+            filteredData.length
+          )}`}{' '}
+      of {filteredData.length} sales
+    </div>
+
+    {/* Pagination Controls */}
+    <div className="flex items-center space-x-2">
+
+      {/* Previous Button */}
+      <button
+        type="button"
+        onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+        disabled={currentPage === 1}
+        className={`px-4 py-2 rounded-lg text-sm font-medium.5 font-medium transition-all shadow-sm ${
+          currentPage === 1
+            ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+        }`}
+        aria-label="Previous page"
+      >
+        Previous
+      </button>
+
+      {/* Page Numbers */}
+      {[...Array(pageCount)].map((_, i) => (
         <button
-          onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-          disabled={currentPage === 1}
-          className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50 "
+          key={i + 1}
+          type="button"
+          onClick={() => setCurrentPage(i + 1)}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm ${
+            currentPage === i + 1
+              ? 'bg-indigo-600 text-white dark:bg-indigo-700 shadow-md'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+          }`}
+          aria-current={currentPage === i + 1 ? 'page' : undefined}
         >
-          Prev
+          {i + 1}
         </button>
-        {[...Array(pageCount)].map((_, i) => (
-          <button
-            key={i}
-            onClick={() => setCurrentPage(i + 1)}
-            className={`px-3 py-1 rounded ${
-              currentPage === i + 1
-                ? "bg-indigo-600 text-white"
-                : "bg-gray-200 hover:bg-gray-300"
-            }`}
-          >
-            {i + 1}
-          </button>
-        ))}
-        <button
-          onClick={() =>
-            setCurrentPage((p) => Math.min(p + 1, pageCount))
-          }
-          disabled={currentPage === pageCount}
-          className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
-        >
-          Next
-        </button>
-      </div>
+      ))}
+
+      {/* Next Button */}
+      <button
+        type="button"
+        onClick={() => setCurrentPage(p => Math.min(p + 1, pageCount))}
+        disabled={currentPage === pageCount}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm ${
+          currentPage === pageCount
+            ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+            : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+        }`}
+        aria-label="Next page"
+      >
+        Next
+      </button>
+
+    </div>
+  </div>
+)}
 
       {/* Exports & Chart */}
       <div className="flex flex-wrap justify-center gap-4 mt-6">

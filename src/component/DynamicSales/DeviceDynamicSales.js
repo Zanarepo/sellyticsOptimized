@@ -25,9 +25,24 @@ const tooltipVariants = {
 
 export default function SalesTracker() {
   const storeId = localStorage.getItem('store_id');
-  const itemsPerPage = 20;
+const userEmail = (localStorage.getItem('user_email') || '').trim().toLowerCase();
+
+// Multi-store owner detection state
+const [isMultiStoreOwner, setIsMultiStoreOwner] = useState(false);
+const [ownedStores, setOwnedStores] = useState([]); // { id, shop_name }
+const [selectedStoreId, setSelectedStoreId] = useState('all'); // 'all' or store id (string)
+const [canDelete, setCanDelete] = useState(false);
+
+
+
+
+const itemsPerPage = 20;
   const detailPageSize = 20;
 
+ // const [isMultiStoreOwner, setIsMultiStoreOwner] = useState(false);
+ // const [ownedStores, setOwnedStores] = useState([]); // List of { id, name }
+ // const [selectedStoreId, setSelectedStoreId] = useState('all'); // 'all' or store.id
+ //const [ownerIds, setOwnerId] = useState(null);
 
 // Success sound for scan feedback
 const playSuccessSound = () => {
@@ -77,7 +92,6 @@ const lastScannedCodeRef = useRef(null);
 const [selectedCustomerId, setSelectedCustomerId] = useState(null);
 // In SalesTracker.js
 const [emailReceipt, setEmailReceipt] = useState(false);
- 
 
   // Refs
   const isProcessingClick = useRef(false);
@@ -226,10 +240,7 @@ const stopScanner = useCallback(async () => {
     return totalsData.slice(start, start + itemsPerPage);
   }, [viewMode, totalsData, currentPage]);
 
-  const totalPages = useMemo(() => {
-    if (viewMode === 'list') return Math.ceil(filtered.length / itemsPerPage);
-    return Math.ceil(totalsData.length / itemsPerPage);
-  }, [viewMode, filtered, totalsData]);
+
 
   const totalAmount = useMemo(() => lines.reduce((sum, l) => sum + l.quantity * l.unit_price, 0), [lines]);
 
@@ -292,6 +303,11 @@ const checkSoldDevices = useCallback(async (deviceIds, productId, lineIdx) => {
     { target: '.view-mode-selector', content: 'Switch to Daily or Weekly Totals for summaries.' },
   ];
 
+
+
+
+
+  
   // Scanner: External Scanner Input
  useEffect(() => {
   if (!externalScannerMode || !scannerTarget || !showScanner) return;
@@ -361,8 +377,6 @@ const checkSoldDevices = useCallback(async (deviceIds, productId, lineIdx) => {
     document.removeEventListener('keypress', handleKeypress);
   };
 }, [externalScannerMode, scannerTarget, showScanner, lines, saleForm, products, inventory, storeId, checkSoldDevices, updateFormWithDevice]);
-
-
 
   // Scanner: Webcam Scanner
 
@@ -629,7 +643,64 @@ const handleManualInput = async () => {
   toast.success(`Added Product ID: ${trimmedInput}`);
 };
 
+useEffect(() => {
+  if (!userEmail) {
+    setIsMultiStoreOwner(false);
+    setOwnedStores([]);
+    setCanDelete(false);
+    return;
+  }
 
+  let mounted = true;
+
+  const checkOwnership = async () => {
+    try {
+      // Step 1: Is this user a real store_owner?
+      const { data: owner } = await supabase
+        .from('store_owners')
+        .select('id')
+        .eq('email', userEmail)
+        .single();
+
+      if (owner && mounted) {
+        const { data: stores } = await supabase
+          .from('stores')
+          .select('id, shop_name')
+          .eq('owner_user_id', owner.id)
+          .order('shop_name');
+
+        if (mounted) {
+          const normalized = stores.map(s => ({ id: s.id, shop_name: s.shop_name }));
+          setOwnedStores(normalized);
+          setIsMultiStoreOwner(normalized.length > 1);
+          setCanDelete(true);
+          if (normalized.length === 1) {
+            setSelectedStoreId(String(normalized[0].id));
+          }
+        }
+        return;
+      }
+
+      // Not owner → check if manager of current store
+      if (storeId) {
+        const { data: store } = await supabase
+          .from('stores')
+          .select('email_address')
+          .eq('id', storeId)
+          .single();
+
+        if (store?.email_address?.toLowerCase() === userEmail) {
+          setCanDelete(true);
+        }
+      }
+    } catch (err) {
+      console.error('Multi-store check failed:', err);
+    }
+  };
+
+  checkOwnership();
+  return () => { mounted = false; };
+}, [userEmail, storeId]);
 
   // Data Fetching
  const fetchProducts = useCallback(async () => {
@@ -668,43 +739,94 @@ const handleManualInput = async () => {
     }
   }, [storeId]);
 
-const fetchSales = useCallback(async () => {
-  if (!storeId) return;
-  const { data, error } = await supabase
-    .from('dynamic_sales')
-    .select(`
-      id,
-      sale_group_id,
-      dynamic_product_id,
-      quantity,
-      unit_price,
-      amount,
-      payment_method,
-      paid_to,
-      device_id,
-      device_size,
-      sold_at,
-      customer_id,
-      dynamic_product(name),
-      customer(fullname)
-    `)
-    .eq('store_id', storeId)
-    .order('sold_at', { ascending: false });
-  if (error) {
-    toast.error(`Failed to fetch sales: ${error.message}`);
-    setSales([]);
-    setFiltered([]);
-  } else {
-    const processedSales = (data || []).map(sale => ({
-      ...sale,
-      deviceIds: sale.device_id ? sale.device_id.split(',').filter(id => id.trim()) : [],
-      deviceSizes: sale.device_size ? sale.device_size.split(',').filter(size => size.trim()) : [],
-      customer_name: sale.customer?.fullname || 'N/A', // Add customer_name
-    }));
-    setSales(processedSales);
-    setFiltered(processedSales);
-  }
-}, [storeId]);
+
+  const fetchSales = useCallback(async () => {
+    if (!storeId || !userEmail) {
+      toast.error("Missing store or user info");
+      setSales([]);
+      setFiltered([]);
+      return;
+    }
+  
+    let query = supabase
+      .from('dynamic_sales')
+      .select(`
+        id,
+        sale_group_id,
+        store_id,
+        dynamic_product_id,
+        quantity,
+        unit_price,
+        amount,
+        payment_method,
+        device_id,
+        device_size,
+        sold_at,
+        customer_id,
+        created_by_user_id,
+        created_by_owner,
+        dynamic_product(name),
+        customer(fullname),
+        sale_store:stores!store_id(shop_name)
+      `)
+      .order('sold_at', { ascending: false });
+  
+    // === MULTI-STORE FILTERING ===
+    if (isMultiStoreOwner && selectedStoreId && selectedStoreId !== 'all') {
+      query = query.eq('store_id', Number(selectedStoreId));
+    } else if (isMultiStoreOwner) {
+      // 'all' → show sales from all owned stores
+      const ownedStoreIds = ownedStores.map(s => s.id);
+      query = query.in('store_id', ownedStoreIds);
+    } else {
+      // Single store user → only current store
+      query = query.eq('store_id', storeId);
+    }
+  
+    // === ROLE-BASED FILTERING (non-owners see only their sales) ===
+    const { data: ownerData } = await supabase
+      .from('stores')
+      .select('email_address')
+      .eq('id', storeId)
+      .single();
+  
+    const isOwner = ownerData?.email_address?.toLowerCase() === userEmail;
+  
+    if (!isOwner && !isMultiStoreOwner) {
+      const { data: storeUser } = await supabase
+        .from('store_users')
+        .select('id')
+        .eq('store_id', storeId)
+        .eq('email_address', userEmail)
+        .maybeSingle();
+  
+      if (storeUser) {
+        query = query.eq('created_by_user_id', storeUser.id);
+      } else {
+        setSales([]);
+        setFiltered([]);
+        return;
+      }
+    }
+  
+    const { data, error } = await query;
+  
+    if (error) {
+      toast.error(`Failed to fetch sales: ${error.message}`);
+      setSales([]);
+      setFiltered([]);
+    } else {
+      const processedSales = (data || []).map(sale => ({
+        ...sale,
+        deviceIds: sale.device_id ? sale.device_id.split(',').filter(id => id.trim()) : [],
+        deviceSizes: sale.device_size ? sale.device_size.split(',').filter(size => size.trim()) : [],
+        customer_name: sale.customer?.fullname || 'Walk-in',
+        store: sale.sale_store,
+      }));
+      setSales(processedSales);
+      setFiltered(processedSales);
+    }
+  }, [storeId, userEmail, isMultiStoreOwner, selectedStoreId, ownedStores]);
 
 
   useEffect(() => {
@@ -1132,7 +1254,17 @@ const handleEditChange = (field, value, deviceIdx = null) => {
   
       if (grpErr) throw new Error(`Sale group creation failed: ${grpErr.message}`);
       const groupId = grp.id;
-  
+
+// Try to find store_user by email
+const { data: storeUser } = await supabase
+  .from('store_users')
+  .select('id')
+  .eq('store_id', storeId)
+  .eq('email_address', userEmail)
+  .maybeSingle();
+
+if (storeUser) {
+}
       // === 4. Prepare sale lines ===
       const inserts = lines.map((l) => ({
         store_id: storeId,
@@ -1145,6 +1277,10 @@ const handleEditChange = (field, value, deviceIdx = null) => {
         device_size: l.deviceSizes.filter((s) => s.trim()).join(',') || null,
         payment_method: paymentMethod,
         customer_id: selectedCustomerId || null,
+      
+        created_by_user_id: localStorage.getItem('user_id') ? Number(localStorage.getItem('user_id')) : null,
+        created_by_owner: isMultiStoreOwner ? null : (storeId ? Number(storeId) : null), // or use owner logic below
+
       }));
   
       // === 5. Insert into dynamic_sales ===
@@ -1629,43 +1765,81 @@ const saveEdit = async () => {
             checkSoldDevices(product.deviceIds, s.dynamic_product_id, 0);
           }
         }}
-        onDelete={(s) => deleteSale(s)}
+       
+        onDelete={deleteSale}
+        storeId={storeId}
+        isMultiStoreOwner={isMultiStoreOwner}
+  ownedStores={ownedStores}
+  selectedStoreId={selectedStoreId}
+  setSelectedStoreId={setSelectedStoreId}
+  canDelete={canDelete}
+
       />
+{/* Beautiful & Professional Pagination – Perfectly Tailored to Your Code */}
+<div className="flex flex-col sm:flex-row justify-between items-center mt-6 px-4 gap-4">
+  {/* Showing X to Y of Z */}
+  <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+    Showing{' '}
+    {filtered.length === 0
+      ? '0'
+      : `${(currentPage - 1) * itemsPerPage + 1} to ${Math.min(
+          currentPage * itemsPerPage,
+          filtered.length
+        )}`}{' '}
+    of {filtered.length} entries
+  </div>
 
-        {/* Pagination */}
-        <div className="flex flex-wrap justify-center items-center gap-2 mt-4">
-          <button
-            type="button"
-            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600 transition"
-          >
-            Prev
-          </button>
-          {[...Array(totalPages).keys()].map((i) => (
-            <button
-              type="button"
-              key={i}
-              onClick={() => setCurrentPage(i + 1)}
-              className={`px-3 py-1 rounded transition ${
-                currentPage === i + 1
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600'
-                }`}
-            >
-              {i + 1}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages}
-            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50 dark:bg-gray-600 dark:hover:bg-gray-700 transition"
-          >
-            Next
-          </button>
-        </div>
+  {/* Pagination Controls */}
+  <div className="flex items-center space-x-2">
+    {/* Previous Button */}
+    <button
+      type="button"
+      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+      disabled={currentPage === 1 || filtered.length === 0}
+      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+        currentPage === 1 || filtered.length === 0
+          ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+          : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+      }`}
+      aria-label="Previous page"
+    >
+      Previous
+    </button>
 
+    {/* Page Numbers */}
+    {[...Array(Math.ceil(filtered.length / itemsPerPage)).keys()].map((i) => (
+      <button
+        key={i + 1}
+        type="button"
+        onClick={() => setCurrentPage(i + 1)}
+        disabled={viewMode !== 'list'}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          currentPage === i + 1
+            ? 'bg-indigo-600 text-white dark:bg-indigo-700 shadow-md'
+            : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+        } ${viewMode !== 'list' ? 'opacity-50 cursor-not-allowed' : ''}`}
+        aria-current={currentPage === i + 1 ? 'page' : undefined}
+      >
+        {i + 1}
+      </button>
+    ))}
+
+    {/* Next Button */}
+    <button
+      type="button"
+      onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(filtered.length / itemsPerPage)))}
+      disabled={currentPage === Math.ceil(filtered.length / itemsPerPage) || filtered.length === 0}
+      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+        currentPage === Math.ceil(filtered.length / itemsPerPage) || filtered.length === 0
+          ? 'bg-gray-200 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed'
+          : 'bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md hover:shadow-lg'
+      }`}
+      aria-label="Next page"
+    >
+      Next
+    </button>
+  </div>
+</div>
         {/* Export Buttons */}
         <div className="flex flex-wrap justify-center items-center gap-3 mt-4">
           <button
@@ -1677,6 +1851,9 @@ const saveEdit = async () => {
             <FaFileCsv className="w-4 h-4" />
             <span>Export CSV</span>
           </button>
+
+
+          
           <button
             onClick={exportPDF}
             className="flex items-center justify-center gap-2 w-full sm:w-44 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition export-pdf-button"
