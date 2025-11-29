@@ -14,7 +14,7 @@ import {
   FaSearch,
   FaLock,
 } from 'react-icons/fa';
-import DynamicInventory from '../DynamicSales/DynamicInventory';
+//import DynamicInventory from '../DynamicSales/DynamicInventory';
 //import ExpenseTracker from './ExpenseTracker';
 import Customers from './Customers';
 import DebtTracker from './DebtTracker';
@@ -24,13 +24,15 @@ import DynamicReturnedItems from '../VariexContents/DynamicReturnedItems';
 import DynamicSuppliersTracker from '../Ops/DynamicSuppliersTracker';
 import DashboardAccess from '../Ops/DashboardAccess';
 //import GadgetsDynamicProducts from './GadgetsDynamicProducts';
-import VsalesSummary from '../Ops/VsalesSummary';
+//import VsalesSummary from '../Ops/VsalesSummary';
 import ReceiptQRCode from '../VariexContents/ReceiptQRCode';
 //import StockTransfer from './StockTransfer'
 import DynamicProducts from '../products/DynamicProducts'
 import DebtsManager from '../Debts/DebtsManager'
 import ExpenseManager from '../Expenses/ExpenseManager';
 import StockTransfer from '../StockTransfer/StockTransfer';
+import SalesDashboard from '../SalesDashboard/SalesDashboard';
+import InventoryTable from '../Inventory/components/InventoryTable';
 
 
 
@@ -70,7 +72,7 @@ const tools = [
     label: 'Manage Inventory (Goods)',
     icon: <FaTasks className="text-2xl sm:text-5xl text-indigo-600 dark:text-indigo-400" />,
     desc: 'Keep an eye on how much goods you have sold and what is left in your store.',
-    component: <DynamicInventory />,
+    component: <InventoryTable />,
     isFreemium: true,
   },
   {
@@ -124,9 +126,9 @@ const tools = [
   {
     key: 'sales_summary',
     label: 'Sales Summary',
-    icon: <FaChartLine className="text-2xl sm:text-5xl text-indigo-600 dark:text-indigo-400" />,
-    desc: 'View a summary of your sales performance.',
-    component: <VsalesSummary />,
+    icon: <FaChartLine className= "text-2xl sm:text-5xl text-indigo-600 dark:text-indigo-400" />, // ← No size classes here!
+    desc: 'Real-time insights into your store performance',
+    component: <SalesDashboard />,
     isFreemium: true,
   },
   {
@@ -373,7 +375,8 @@ export default function DynamicDashboard() {
         );
       }
       return (
-        <div className="w-full bg-white dark:bg-gray-900 p-4">
+        
+        <div className="w-full bg-white dark:bg-gray-900 p-2">
           <div className="mb-4 sm:mb-6">
             <button
               onClick={() => setActiveTool(null)}
@@ -388,6 +391,7 @@ export default function DynamicDashboard() {
           </div>
           {React.cloneElement(tool.component, { setActiveTool })}
         </div>
+        
       );
     }
 

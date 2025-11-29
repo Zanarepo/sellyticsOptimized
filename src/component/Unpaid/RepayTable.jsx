@@ -1,15 +1,22 @@
-// components/Unpaid/RepayTable.jsx
-import React from 'react';
+import React, { useState } from 'react';
 import { FaHistory } from 'react-icons/fa';
 import RepayDetailModal from './RepayDetailModal';
+import Loader from '../Loader'; // Your brand loader
 
 export default function RepayTable({ debts, onPay, onHistory, onViewDevices }) {
-  const [selectedDebt, setSelectedDebt] = React.useState(null);
-  const [showDetailModal, setShowDetailModal] = React.useState(false);
+  const [selectedDebt, setSelectedDebt] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false); // Track loading state
 
-  const openDetailModal = (debt) => {
+  const openDetailModal = async (debt) => {
+    setIsLoadingDetail(true);
     setSelectedDebt(debt);
     setShowDetailModal(true);
+
+    // Simulate loading (remove if real async work)
+    setTimeout(() => {
+      setIsLoadingDetail(false);
+    }, 800);
   };
 
   return (
@@ -124,7 +131,7 @@ export default function RepayTable({ debts, onPay, onHistory, onViewDevices }) {
           )}
         </div>
       </div>
-
+{isLoadingDetail && <Loader message="Loading payment details..." />} 
       {/* Detail Modal - Triggered by clicking Product name */}
       {showDetailModal && selectedDebt && (
         <RepayDetailModal

@@ -99,7 +99,7 @@ C. Update analytics table when sales occur
 D. Log adjustment into inventory_adjustments
 
 
-
+create an au
 
 create or replace function enforce_inventory_permission()
 returns trigger
@@ -441,3 +441,34 @@ If you want, I can also:
 ✅ Refactor your existing component into this new architecture
 
 Just tell me **“generate the full code structure”** or **“refactor my component using these modules”**.
+
+
+
+
+Create an automation to email your supplirs to supply you goods when stock are below certain threshold. 
+
+
+
+
+create table public.product_inventory_adjustments_logs (
+  id serial not null,
+  dynamic_inventory_id integer not null,
+  dynamic_product_id integer null,
+  store_id integer not null,
+  old_quantity integer not null,
+  new_quantity integer not null,
+  difference integer GENERATED ALWAYS as ((new_quantity - old_quantity)) STORED null,
+  reason text null,
+  updated_by integer null,
+  metadata jsonb null,
+  created_at timestamp without time zone null default CURRENT_TIMESTAMP,
+  updated_at timestamp with time zone null,
+  constraint product_inventory_adjustments_logs_pkey primary key (id),
+  constraint product_inventory_adjustments_logs_dynamic_inventory_id_fkey foreign KEY (dynamic_inventory_id) references dynamic_inventory (id) on delete CASCADE,
+  constraint product_inventory_adjustments_logs_dynamic_product_id_fkey foreign KEY (dynamic_product_id) references dynamic_product (id) on delete CASCADE,
+  constraint product_inventory_adjustments_logs_store_id_fkey foreign KEY (store_id) references stores (id) on delete CASCADE,
+  constraint product_inventory_adjustments_logs_updated_by_fkey foreign KEY (updated_by) references store_users (id)
+) TABLESPACE pg_default;
+
+
+

@@ -42,6 +42,7 @@ import UnpaidManager from "./component/Unpaid/UnpaidManager";
 import ExpenseManager from "./component/Expenses/ExpenseManager";
 import StockTransfer from "./component/StockTransfer/StockTransfer";
 import InventoryTable from './component/Inventory/components/InventoryTable'
+import SalesDashboard from "./component/SalesDashboard/SalesDashboard";
 //import SalesTrackers from './component/DynamicSales/components/SalesTrackers'
 
 const App = () => {
@@ -102,6 +103,8 @@ const App = () => {
             <Route path="/expense" element={<ExpenseManager/>}/>
             <Route path="/stock" element={<StockTransfer/>}/>
             <Route path="/inventory" element={<InventoryTable/>}/>
+            <Route path="/db" element={<SalesDashboard/>}/>
+            
             
             
             

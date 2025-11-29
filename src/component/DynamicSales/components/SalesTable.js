@@ -51,7 +51,7 @@ export default function SalesTable({
     const openProductDetail = (sale) => {
       setSelectedProduct({
         id: sale.dynamic_product_id || sale.dynamic_product?.id,
-        name: sale.dynamic_product?.name || sale.product_name || 'Unknown Product'
+        name: sale.dynamic_product?.name || sale.product_name || 'N/A'
       });
       setShowProductModal(true);
     };

@@ -113,7 +113,7 @@ salesQuery = salesQuery.in('store_id', storeIds);
 const performerMap = {};
 
 sales.forEach(s => {
-  let creatorName = 'Unknown User';
+  let creatorName = 'Sold By Owner';
   let storeName = s.sale_store?.shop_name || 'Unknown Store';
 
   // 1. Staff made the sale

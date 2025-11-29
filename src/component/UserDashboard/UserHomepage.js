@@ -79,7 +79,7 @@ useEffect(() => {
         );
       case 'Fix Scan':
         return (
-          <div className="w-full bg-white dark:bg-gray-900 p-4">
+          <div className="w-full bg-white dark:bg-gray-900">
             <ERetailStores />
           </div>
         );

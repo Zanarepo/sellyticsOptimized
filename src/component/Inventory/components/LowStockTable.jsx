@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertCircle } from 'lucide-react';
-
+import { FaEdit} from 'react-icons/fa';
 /**
  * LowStockTable component
  * @param {Array} lowStockItems - filtered inventory items below threshold
@@ -47,10 +47,10 @@ export default function LowStockTable({
                 {canAdjust && (
                   <td className="p-2 whitespace-nowrap">
                     <button
-                      className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                      className="px-3 py-1  text-indigo-600 rounded hover:bg-indigo-100"
                       onClick={() => onProductClick(item)}
                     >
-                      Adjust Qty
+                      <FaEdit className="w-4 h-4" />
                     </button>
                   </td>
                 )}

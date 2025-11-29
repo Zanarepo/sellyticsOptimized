@@ -8,7 +8,7 @@ import InventoryDetailModal from './InventoryDetailModal';
 import ProductInsightsModal from './ProductInsightsModal';
 import OnboardingTooltip from './OnboardingTooltip';
 import ProductAnalyticsModal from './ProductAnalyticsModal';
-
+import { FaEdit, FaTrashAlt, FaHistory } from 'react-icons/fa';
 
 export default function InventoryTable() {
   const {
@@ -158,8 +158,7 @@ export default function InventoryTable() {
 
   return (
     <div className="space-y-6 p-4 dark:bg-gray-900 dark:text-white">
-      <h1 className="text-2xl font-bold text-center mb-6">Inventory Management</h1>
-
+    
       <InventoryControls
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
@@ -218,24 +217,24 @@ export default function InventoryTable() {
                     {canAdjust && (
                       <button
                         onClick={() => setDetailModalProduct(item)}
-                        className="px-3 py-1.5 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700"
+                        className="px-3 py-1.5  text-indigo-600 text-xs rounded hover:bg-indigo-100"
                       >
-                        Adjust
+                      <FaEdit className="w-4 h-4" />
                       </button>
                     )}
                     {canDelete && (
                       <button
                         onClick={() => handleDelete(item)}
-                        className="px-3 py-1.5 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                        className="px-3 py-1.5 text-red-600 text-xs rounded hover:bg-red-100"
                       >
-                        Delete
+                      <FaTrashAlt className="w-4 h-4" />
                       </button>
                     )}
                     <button
                       onClick={() => setInsightsModalProduct(item)}
-                      className="px-3 py-1.5 bg-gray-600 text-white text-xs rounded hover:bg-gray-700"
+                      className="px-3 py-1.5  text-yellow-600 text-xs rounded hover:bg-yellow-100"
                     >
-                     History
+                    <FaHistory className="w-4 h-4" />
                     </button>
                   </td>
                 </tr>

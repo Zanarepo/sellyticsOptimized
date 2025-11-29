@@ -130,10 +130,6 @@ export default function DebtDetailModal({ debt: initialDebt, onClose }) {
   }, [preferredCurrency]);
    
 
-
-
-
-
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[95vh] overflow-y-auto">
